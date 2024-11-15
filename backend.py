@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, render_template
 from werkzeug.utils import secure_filename
 from openai import OpenAI
 from pydub import AudioSegment
@@ -9,7 +9,10 @@ import tempfile
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-app = Flask(__name__)
+app = Flask(__name__, 
+    template_folder='templates',  # specify the templates folder
+    static_folder='static'        # specify the static folder
+)
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -30,7 +33,7 @@ def setup_upload_folder():
 @app.route('/')
 def serve_index():
     logging.info("Serving index.html")
-    return send_from_directory('static', 'index.html')
+    return send_from_directory('templates', 'index.html')
 
 def allowed_file(filename):
     is_allowed = '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -127,21 +130,28 @@ def split_audio(file_path):
 
 def transcribe_segment(file_path):
     """Transcribe a single audio segment"""
-    with open(file_path, "rb") as audio_file:
-        transcript = client.audio.transcriptions.create(
-            file=audio_file,
-            model="whisper-1",
-            response_format="verbose_json",
-            timestamp_granularities=["word"]
-        )
-    logging.info(f"Transcribed segment: {file_path}")
-    
-    # Log the entire response structure
-    logging.debug(f"Full transcript response: {transcript}")
-    if hasattr(transcript, 'words') and transcript.words:
-        logging.debug(f"First word object: {vars(transcript.words[0])}")
-    
-    return []  # temporary return empty list until we see the structure
+    try:
+        with open(file_path, "rb") as audio_file:
+            transcript = client.audio.transcriptions.create(
+                file=audio_file,
+                model="whisper-1",
+                response_format="verbose_json",
+                timestamp_granularities=["segment"]
+            )
+        logging.info(f"Transcribed segment: {file_path}")
+        
+        # Log the response for debugging
+        logging.debug(f"Transcript response type: {type(transcript)}")
+        logging.debug(f"Transcript response: {transcript}")
+        
+        # Extract just the text field from the response
+        return transcript.text
+        
+    except Exception as e:
+        logging.error(f"Error in transcribe_segment: {str(e)}")
+        # Log the full error details
+        logging.error(f"Full error details: {str(e.__dict__)}")
+        raise
 
 def cleanup_segments(segment_files):
     """Clean up temporary segment files"""
@@ -164,49 +174,97 @@ def process_audio_file(file_path):
         try:
             for segment in segments:
                 segment_transcription = transcribe_segment(segment)
-                transcriptions.extend(segment_transcription)
+                transcriptions.append(segment_transcription)
         finally:
             cleanup_segments(segments)
             
-        return transcriptions
+        # Join all transcriptions with spaces
+        return ' '.join(transcriptions)
     else:
         return transcribe_segment(file_path)
 
 @app.route('/upload-audio', methods=['POST'])
 def upload_audio():
-    if 'audio' not in request.files:
-        logging.error("No file provided in the request")
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['audio']
-    
-    if file.filename == '':
-        logging.error("No file selected")
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if not allowed_file(file.filename):
-        logging.error(f"Invalid file type: {file.filename}")
-        return jsonify({'error': 'Invalid file type. Allowed types: ' + ', '.join(ALLOWED_EXTENSIONS)}), 400
-    
     try:
+        if 'audio' not in request.files:
+            logging.error("No file provided in the request")
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['audio']
+        logging.info(f"Received file: {file.filename}")
+        
+        if file.filename == '':
+            logging.error("No file selected")
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not allowed_file(file.filename):
+            logging.error(f"Invalid file type: {file.filename}")
+            return jsonify({'error': 'Invalid file type. Allowed types: ' + ', '.join(ALLOWED_EXTENSIONS)}), 400
+        
         filename = secure_filename(file.filename)
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
+        # Log before saving
+        logging.info(f"Attempting to save file to: {file_path}")
         file.save(file_path)
-        logging.info(f"Saved uploaded file: {file_path}")
+        logging.info(f"Successfully saved file to: {file_path}")
         
-        # Process and transcribe the file
+        # Log before transcription
+        logging.info("Starting transcription process")
         transcription = process_audio_file(file_path)
+        logging.info("Transcription completed successfully")
         
-        return jsonify({
-            'message': 'File processed successfully',
-            'id': filename,
-            'transcript': transcription
-        })
+        # Log the transcription result
+        logging.debug(f"Transcription result: {transcription[:100]}...")  # Log first 100 chars
+        
+        # Create blog post
+        blog_post = {
+            'title': f"Transcript: {filename}",
+            'keyword': 'audio_transcript',
+            'content': transcription
+        }
+        
+        # Initialize blog_posts if needed
+        if not hasattr(app, 'blog_posts'):
+            app.blog_posts = []
+            logging.info("Initialized blog_posts list")
+        
+        app.blog_posts.append(blog_post)
+        post_id = len(app.blog_posts) - 1
+        logging.info(f"Added blog post with ID: {post_id}")
+        
+        # Create response
+        response_data = {
+            'success': True,
+            'id': post_id
+        }
+        
+        logging.info(f"Sending success response with ID: {post_id}")
+        return jsonify(response_data)
         
     except Exception as e:
-        logging.error(f"Error processing file: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Unexpected error in upload_audio: {str(e)}")
+        logging.exception("Full traceback:")  # This will log the full stack trace
+        return jsonify({'error': 'An unexpected error occurred. Please check the logs.'}), 500
+
+@app.route('/blog')
+def view_blog():
+    post_id = request.args.get('id', type=int)
+    if not hasattr(app, 'blog_posts') or post_id is None or post_id >= len(app.blog_posts):
+        return "Blog post not found", 404
+    
+    try:
+        # Get example blog text for the rewrite feature
+        example_blog_path = os.path.join(app.static_folder, 'example_blog.txt')
+        with open(example_blog_path, 'r') as f:
+            blog_txt = f.read()
+        
+        return render_template('blog.html', 
+                             blog_posts=[app.blog_posts[post_id]], 
+                             blog_txt=blog_txt)
+    except Exception as e:
+        logging.error(f"Error rendering blog template: {str(e)}")
+        return f"Error rendering blog template: {str(e)}", 500
 
 if __name__ == '__main__':
     setup_upload_folder()  # Ensure the uploads directory exists

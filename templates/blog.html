@@ -184,25 +184,76 @@
             50% { opacity: 0.5; }
             100% { opacity: 1; }
         }
+
+        /* Add new styles for transcript-specific elements */
+        .transcript-metadata {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+        
+        .timestamp {
+            color: #888;
+            font-size: 0.8em;
+            margin-right: 10px;
+        }
+        
+        .word-confidence {
+            background-color: rgba(76, 175, 80, 0.1);
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body>
-    <h1>Generated Blog Posts</h1>
+    <h1>{% if blog_posts[0].keyword == 'audio_transcript' %}Audio Transcript{% else %}Generated Blog Posts{% endif %}</h1>
+    
     {% for post in blog_posts %}
     <div class="blog-post">
         <h2>{{ post.title }}</h2>
+        
+        <!-- Add metadata section for transcripts -->
+        {% if post.keyword == 'audio_transcript' %}
+        <div class="transcript-metadata">
+            <p><strong>Source:</strong> Audio File</p>
+            {% if post.duration %}
+            <p><strong>Duration:</strong> {{ post.duration }}</p>
+            {% endif %}
+        </div>
+        {% else %}
         <p><strong>Keyword:</strong> {{ post.keyword }}</p>
-        <div id="blog-content-{{ loop.index0 }}" data-title="{{ post.title }}">{{ post.content | safe }}</div>
+        {% endif %}
+
+        <div id="blog-content-{{ loop.index0 }}" 
+             data-title="{{ post.title }}"
+             {% if post.keyword == 'audio_transcript' %}data-type="transcript"{% endif %}>
+            {{ post.content | safe }}
+        </div>
+
         <div class="loading-indicator" style="display: none;">Loading...</div>
+        
+        <!-- Modify buttons based on content type -->
         <div class="default-buttons">
+            {% if post.keyword == 'audio_transcript' %}
+            <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 
+                'Clean up this transcript by removing filler words and fixing grammar while maintaining the original meaning.')">
+                Clean Transcript
+            </button>
+            <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 
+                'Convert this transcript into a properly formatted blog post.')">
+                Convert to Blog Post
+            </button>
+            {% else %}
             <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 
                 `rewrite the entire above blog post using the below formatting and voice of the example below, do not change the topic of the original blog, just maintain voice of below example:
                 ${`{{ blog_txt | safe }}`}`)">
                 Rewrite Using Armarkat Voice
             </button>
+            {% endif %}
             <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 'need meta and tags for blog')">Get meta and tags</button>
             <button class="default-button" onclick="exportToGoogleDrive({{ loop.index0 }})">Export to Google Drive</button>
         </div>
+
         <div class="chat-input">
             <input type="text" id="chat-input-{{ loop.index0 }}" placeholder="Ask a question or suggest an edit...">
             <button onclick="sendMessage({{ loop.index0 }})">Send</button>
@@ -243,13 +294,33 @@
             }
         }
 
+        // Add function to handle transcript-specific formatting
+        function formatTranscript(content, timestamps) {
+            if (!timestamps) return content;
+            
+            return content.split(' ').map((word, index) => {
+                if (timestamps[index]) {
+                    return `<span class="word" 
+                                 data-start="${timestamps[index].start}" 
+                                 data-end="${timestamps[index].end}"
+                                 title="Confidence: ${timestamps[index].confidence}">
+                            ${word}
+                        </span>`;
+                }
+                return word;
+            }).join(' ');
+        }
+
+        // Modify existing sendMessage function to handle transcript data
         function sendMessage(index, customMessage = null) {
             const input = document.getElementById(`chat-input-${index}`);
             const message = customMessage || input.value.trim();
             if (message) {
                 showLoading(index);
                 const blogContentElement = document.getElementById(`blog-content-${index}`);
+                const isTranscript = blogContentElement.getAttribute('data-type') === 'transcript';
                 const blogContent = `Title: ${blogContentElement.getAttribute('data-title')}\n\n${blogContentElement.innerHTML}`;
+                
                 // Get the content ID from the URL
                 const urlParams = new URLSearchParams(window.location.search);
                 const contentId = urlParams.get('id');
@@ -263,11 +334,16 @@
                     body: JSON.stringify({ 
                         message: message,
                         blogContent: blogContent,
+                        isTranscript: isTranscript
                     })
                 })
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById(`blog-content-${index}`).innerHTML = data.response;
+                    const content = isTranscript && data.timestamps ? 
+                        formatTranscript(data.response, data.timestamps) : 
+                        data.response;
+                    
+                    document.getElementById(`blog-content-${index}`).innerHTML = content;
                     if (!customMessage) {
                         input.value = '';
                     }

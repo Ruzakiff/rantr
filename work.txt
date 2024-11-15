@@ -1,0 +1,10 @@
+chance to correct transcript?
+
+break to titles-choose titles?
+
+
+make each title a link to the blog post
+
+chance to add more to it via audio/editor studio
+
+export to html whatever

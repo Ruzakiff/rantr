@@ -123,12 +123,6 @@
         }
 
         function uploadFile(file) {
-            // Validate file type
-            if (!file.type.startsWith('audio/')) {
-                alert('Please upload an audio file');
-                return;
-            }
-
             let url = '/upload-audio';
             let formData = new FormData();
             formData.append('audio', file);
@@ -140,16 +134,24 @@
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 // Hide loading indicator
                 document.getElementById('loading').style.display = 'none';
 
-                if (data.id) {
-                    window.location.href = '/player?id=' + data.id;
+                if (data.success) {
+                    // Redirect to blog page with ID
+                    window.location.href = '/blog?id=' + data.id;
                 } else if (data.error) {
+                    console.error('Error:', data.error);
                     alert('Error: ' + data.error);
                 } else {
+                    console.error('Unexpected response:', data);
                     alert('An unexpected error occurred');
                 }
             })
@@ -158,6 +160,36 @@
                 alert('Error uploading file: ' + error.message);
                 // Hide loading indicator on error
                 document.getElementById('loading').style.display = 'none';
+            });
+        }
+
+        function uploadAudio() {
+            const fileInput = document.getElementById('audioFile');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a file first');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('audio', file);
+
+            fetch('/upload-audio', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Redirect to the blog page
+                    window.location.href = data.redirect;
+                } else if (data.error) {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error uploading file');
             });
         }
     </script>
