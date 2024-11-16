@@ -5,6 +5,7 @@ from werkzeug.utils import secure_filename
 from openai import OpenAI
 from pydub import AudioSegment
 import tempfile
+from threading import Lock
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -24,6 +25,10 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Initialize OpenAI client
 client = OpenAI()
+
+# Add near other app configurations
+progress_data = {}
+progress_lock = Lock()
 
 def setup_upload_folder():
     """Create the uploads directory if it doesn't exist."""
@@ -162,26 +167,52 @@ def cleanup_segments(segment_files):
         except Exception as e:
             logging.error(f"Error cleaning up {file_path}: {str(e)}")
 
-def process_audio_file(file_path):
-    """Process audio file, splitting if necessary and transcribing"""
+def update_progress(session_id, current, total):
+    """Update progress for a given session"""
+    with progress_lock:
+        progress_data[session_id] = {
+            'current': current,
+            'total': total,
+            'percentage': (current / total * 100) if total > 0 else 0,
+            'status': 'processing' if current < total else 'complete'
+        }
+
+def process_audio_file(file_path, session_id):
+    """Process audio file with progress tracking"""
     file_size = os.path.getsize(file_path)
-    logging.info(f"Processing audio file: {file_path}, size: {file_size} bytes")
+    
+    # Initialize progress before starting processing
+    update_progress(session_id, 0, 1)  # Default to 1 segment
     
     if file_size > MAX_SEGMENT_SIZE:
         segments = split_audio(file_path)
         transcriptions = []
+        total_segments = len(segments)
+        
+        # Update progress with actual total segments
+        update_progress(session_id, 0, total_segments)
         
         try:
-            for segment in segments:
+            for index, segment in enumerate(segments, 1):
                 segment_transcription = transcribe_segment(segment)
                 transcriptions.append(segment_transcription)
+                update_progress(session_id, index, total_segments)
         finally:
             cleanup_segments(segments)
             
-        # Join all transcriptions with spaces
         return ' '.join(transcriptions)
     else:
-        return transcribe_segment(file_path)
+        result = transcribe_segment(file_path)
+        update_progress(session_id, 1, 1)  # Mark as complete
+        return result
+
+@app.route('/check-progress/<session_id>')
+def check_progress(session_id):
+    """Endpoint for checking transcription progress"""
+    with progress_lock:
+        if session_id not in progress_data:
+            return jsonify({'error': 'Session not found'}), 404
+        return jsonify(progress_data[session_id])
 
 @app.route('/upload-audio', methods=['POST'])
 def upload_audio():
@@ -211,40 +242,61 @@ def upload_audio():
         
         # Log before transcription
         logging.info("Starting transcription process")
-        transcription = process_audio_file(file_path)
-        logging.info("Transcription completed successfully")
+        session_id = request.form.get('session_id')
+        if not session_id:
+            return jsonify({'error': 'No session ID provided'}), 400
+            
+        # Initialize progress data immediately
+        update_progress(session_id, 0, 1)  # Start with default values
         
-        # Log the transcription result
-        logging.debug(f"Transcription result: {transcription[:100]}...")  # Log first 100 chars
+        # Process file in a separate thread to not block progress checks
+        def process_async():
+            try:
+                transcription = process_audio_file(file_path, session_id)
+                
+                # Create blog post and update response
+                blog_post = {
+                    'title': f"Transcript: {filename}",
+                    'keyword': 'audio_transcript',
+                    'content': transcription
+                }
+                
+                if not hasattr(app, 'blog_posts'):
+                    app.blog_posts = []
+                
+                app.blog_posts.append(blog_post)
+                post_id = len(app.blog_posts) - 1
+                
+                # Update progress data with success
+                with progress_lock:
+                    progress_data[session_id].update({
+                        'status': 'complete',
+                        'success': True,
+                        'id': post_id
+                    })
+                    
+            except Exception as e:
+                logging.error(f"Error processing file: {str(e)}")
+                with progress_lock:
+                    progress_data[session_id].update({
+                        'status': 'error',
+                        'error': str(e)
+                    })
         
-        # Create blog post
-        blog_post = {
-            'title': f"Transcript: {filename}",
-            'keyword': 'audio_transcript',
-            'content': transcription
-        }
+        # Start processing in background
+        from threading import Thread
+        Thread(target=process_async).start()
         
-        # Initialize blog_posts if needed
-        if not hasattr(app, 'blog_posts'):
-            app.blog_posts = []
-            logging.info("Initialized blog_posts list")
-        
-        app.blog_posts.append(blog_post)
-        post_id = len(app.blog_posts) - 1
-        logging.info(f"Added blog post with ID: {post_id}")
-        
-        # Create response
-        response_data = {
+        # Return immediate response
+        return jsonify({
             'success': True,
-            'id': post_id
-        }
-        
-        logging.info(f"Sending success response with ID: {post_id}")
-        return jsonify(response_data)
+            'message': 'Processing started',
+            'session_id': session_id
+        })
         
     except Exception as e:
         logging.error(f"Unexpected error in upload_audio: {str(e)}")
-        logging.exception("Full traceback:")  # This will log the full stack trace
+        logging.exception("Full traceback:")
         return jsonify({'error': 'An unexpected error occurred. Please check the logs.'}), 500
 
 @app.route('/blog')

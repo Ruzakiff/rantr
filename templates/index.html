@@ -65,6 +65,25 @@
             color: #333;
             margin-bottom: 40px;
         }
+        #progress-container {
+            background-color: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .progress-bar-container {
+            background-color: #f0f0f0;
+        }
+
+        #transcription-progress {
+            transition: width 0.3s ease-in-out;
+        }
+
+        #progress-text {
+            color: #666;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -81,9 +100,17 @@
             <p>This may take a minute or two. Please wait.</p>
         </div>
     </div>
+    <div id="progress-container" style="display: none; width: 480px; margin-top: 20px;">
+        <div class="progress-bar-container" style="border: 1px solid #ccc; border-radius: 5px; overflow: hidden;">
+            <div id="transcription-progress" style="width: 0%; height: 20px; background-color: #4CAF50; transition: width 0.3s ease-in-out;"></div>
+        </div>
+        <p id="progress-text" style="text-align: center; margin-top: 10px;">Starting transcription...</p>
+    </div>
 
     <script>
         let dropArea = document.getElementById('drop-area');
+        let progressContainer = document.getElementById('progress-container');
+        let loadingDiv = document.getElementById('loading');
 
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropArea.addEventListener(eventName, preventDefaults, false);
@@ -118,80 +145,104 @@
             handleFiles(files);
         }
 
-        function handleFiles(files) {
-            ([...files]).forEach(uploadFile);
+        function generateSessionId() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         }
 
-        function uploadFile(file) {
-            let url = '/upload-audio';
-            let formData = new FormData();
+        function updateProgressBar(progress) {
+            const progressBar = document.getElementById('transcription-progress');
+            const progressText = document.getElementById('progress-text');
+            
+            progressBar.style.width = `${progress.percentage}%`;
+            progressText.textContent = `Processing segment ${progress.current} of ${progress.total}`;
+        }
+
+        function startProgressPolling(sessionId) {
+            progressContainer.style.display = 'block';
+            loadingDiv.style.display = 'none';
+            let retryCount = 0;
+            const maxRetries = 3;  // Number of retries before showing error for each 404
+
+            const pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/check-progress/${sessionId}`);
+                    if (response.status === 404) {
+                        retryCount++;
+                        if (retryCount > maxRetries) {
+                            throw new Error('Progress tracking failed to initialize');
+                        }
+                        return; // Skip this iteration and retry
+                    }
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    retryCount = 0; // Reset retry count on successful response
+                    const progress = await response.json();
+                    
+                    updateProgressBar(progress);
+                    
+                    if (progress.status === 'complete' && progress.success) {
+                        clearInterval(pollInterval);
+                        // Redirect to blog page
+                        window.location.href = '/blog?id=' + progress.id;
+                    } else if (progress.status === 'error') {
+                        clearInterval(pollInterval);
+                        progressContainer.style.display = 'none';
+                        alert('Error processing file: ' + progress.error);
+                    }
+                } catch (error) {
+                    console.error('Error checking progress:', error);
+                    retryCount++;
+                    if (retryCount > maxRetries) {
+                        clearInterval(pollInterval);
+                        progressContainer.style.display = 'none';
+                        alert('Error checking progress: ' + error.message);
+                    }
+                }
+            }, 1000);
+            
+            return pollInterval;
+        }
+
+        async function uploadFile(file) {
+            const sessionId = generateSessionId();
+            const url = '/upload-audio';
+            const formData = new FormData();
             formData.append('audio', file);
+            formData.append('session_id', sessionId);
 
-            // Show loading indicator
-            document.getElementById('loading').style.display = 'block';
+            loadingDiv.style.display = 'block';
 
-            fetch(url, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: formData
+                });
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                return response.json();
-            })
-            .then(data => {
-                // Hide loading indicator
-                document.getElementById('loading').style.display = 'none';
 
+                const data = await response.json();
                 if (data.success) {
-                    // Redirect to blog page with ID
-                    window.location.href = '/blog?id=' + data.id;
-                } else if (data.error) {
-                    console.error('Error:', data.error);
-                    alert('Error: ' + data.error);
+                    // Start polling after successful upload initiation
+                    startProgressPolling(sessionId);
                 } else {
-                    console.error('Unexpected response:', data);
-                    alert('An unexpected error occurred');
+                    throw new Error(data.error || 'Upload failed');
                 }
-            })
-            .catch(error => {
+            } catch (error) {
                 console.error('Error:', error);
+                loadingDiv.style.display = 'none';
                 alert('Error uploading file: ' + error.message);
-                // Hide loading indicator on error
-                document.getElementById('loading').style.display = 'none';
-            });
+            }
         }
 
-        function uploadAudio() {
-            const fileInput = document.getElementById('audioFile');
-            const file = fileInput.files[0];
-            if (!file) {
-                alert('Please select a file first');
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('audio', file);
-
-            fetch('/upload-audio', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Redirect to the blog page
-                    window.location.href = data.redirect;
-                } else if (data.error) {
-                    alert('Error: ' + data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Error uploading file');
-            });
+        function handleFiles(files) {
+            ([...files]).forEach(uploadFile);
         }
     </script>
 </body>
 </html>
+
