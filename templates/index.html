@@ -154,7 +154,12 @@
             const progressText = document.getElementById('progress-text');
             
             progressBar.style.width = `${progress.percentage}%`;
-            progressText.textContent = `Processing segment ${progress.current} of ${progress.total}`;
+            
+            if (progress.current === 0) {
+                progressText.textContent = `Preparing to process ${progress.total} segment${progress.total > 1 ? 's' : ''}...`;
+            } else {
+                progressText.textContent = `Processing segment ${progress.current} of ${progress.total}`;
+            }
         }
 
         function startProgressPolling(sessionId) {

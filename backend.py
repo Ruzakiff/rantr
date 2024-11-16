@@ -6,6 +6,7 @@ from openai import OpenAI
 from pydub import AudioSegment
 import tempfile
 from threading import Lock
+import subprocess
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -54,84 +55,99 @@ def calculate_optimal_chunk_duration(audio):
     return int(optimal_duration)
 
 def binary_search_optimal_duration(audio, start_duration, max_attempts=5):
-    """Fine-tune chunk duration using binary search"""
-    min_duration = start_duration // 2
-    max_duration = start_duration * 1.5
-    optimal_duration = start_duration
+    """Fine-tune chunk duration using binary search with sample"""
+    # Only test with first 30 seconds of audio for faster calculation
+    test_audio = audio[:30000]  # First 30 seconds
+    
+    min_duration = int(start_duration // 2)  # Ensure integer
+    max_duration = int(start_duration * 1.5)  # Ensure integer
+    optimal_duration = int(start_duration)  # Ensure integer
     
     for attempt in range(max_attempts):
-        test_segment = audio[:optimal_duration]
+        test_segment = test_audio[:optimal_duration]
         with tempfile.NamedTemporaryFile(suffix='.mp3') as temp_file:
             test_segment.export(temp_file.name, format='mp3', parameters=["-b:a", "192k"])
             size = os.path.getsize(temp_file.name)
-            logging.debug(f"Attempt {attempt + 1}: Test segment size: {size} bytes")
             
-            if size > MAX_SEGMENT_SIZE:
+            # Scale size estimate to full duration
+            estimated_full_size = size * (len(audio) / len(test_audio))
+            
+            if estimated_full_size > MAX_SEGMENT_SIZE:
                 max_duration = optimal_duration
-                optimal_duration = (min_duration + optimal_duration) // 2
-                logging.info(f"Size too large, adjusting max_duration to {max_duration} ms")
-            elif size < MAX_SEGMENT_SIZE * 0.9:  # Too small, try larger
+                optimal_duration = int((min_duration + optimal_duration) // 2)  # Ensure integer
+            elif estimated_full_size < MAX_SEGMENT_SIZE * 0.9:
                 min_duration = optimal_duration
-                optimal_duration = (optimal_duration + max_duration) // 2
-                logging.info(f"Size too small, adjusting min_duration to {min_duration} ms")
-            else:  # Good size (between 90% and 100% of target)
-                logging.info(f"Optimal duration found: {optimal_duration} ms")
+                optimal_duration = int((optimal_duration + max_duration) // 2)  # Ensure integer
+            else:
                 break
     
     return optimal_duration
 
-def split_audio(file_path):
-    """Split audio file into optimally sized chunks"""
-    try:
-        audio = AudioSegment.from_file(file_path)
-        logging.info(f"Loaded audio file: {file_path}")
-    except Exception as e:
-        logging.error(f"Failed to load audio file: {str(e)}")
-        raise ValueError(f"Failed to load audio file: {str(e)}")
-    
-    if len(audio) == 0:
-        logging.warning("Audio file appears to be empty")
-        raise ValueError("Audio file appears to be empty")
-    
-    segments = []
-    optimal_duration = calculate_optimal_chunk_duration(audio)
+def estimate_segments(file_size):
+    """Estimate number of segments based on file size"""
+    # Assume roughly 1MB per minute at 192kbps
+    # Use 20MB as safe segment size for estimation
+    estimated_segments = max(1, file_size // (20 * 1024 * 1024))
+    return int(estimated_segments)
+
+def split_audio_streaming(file_path):
+    """Split audio file into chunks, streaming with ffmpeg"""
+    MAX_SIZE = 24 * 1024 * 1024  # 24MB to be safe
+    CHUNK_DURATION = "180"  # 3 minutes in seconds
     
     try:
-        optimal_duration = int(binary_search_optimal_duration(audio, optimal_duration))  # Convert to integer
-        logging.info(f"Optimal chunk duration: {optimal_duration/1000:.2f} seconds")
+        # Get duration using ffprobe
+        probe_cmd = [
+            'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1', file_path
+        ]
+        duration = float(subprocess.check_output(probe_cmd).decode().strip())
         
-        # Split the audio into segments
-        for i in range(0, len(audio), optimal_duration):
-            segment = audio[i:i + optimal_duration]
+        # Process chunks
+        current_time = 0
+        while current_time < duration:
             with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
-                try:
-                    segment.export(
-                        temp_file.name,
-                        format='mp3',
-                        parameters=["-b:a", "192k"]
-                    )
-                    segments.append(temp_file.name)
-                except Exception as e:
-                    logging.error(f"Error exporting segment: {str(e)}")
-                    # Clean up any temporary files
-                    for seg_file in segments:
-                        try:
-                            os.remove(seg_file)
-                        except:
-                            pass
-                    raise ValueError(f"Failed to export segment: {str(e)}")
-        
-        return segments
-        
+                # Extract chunk using ffmpeg
+                cmd = [
+                    'ffmpeg', '-y',  # Overwrite output files
+                    '-ss', str(current_time),  # Start time
+                    '-t', CHUNK_DURATION,  # Duration of chunk
+                    '-i', file_path,  # Input file
+                    '-b:a', '192k',  # Audio bitrate
+                    '-acodec', 'libmp3lame',  # MP3 codec
+                    temp_file.name  # Output file
+                ]
+                
+                subprocess.run(cmd, capture_output=True, check=True)
+                
+                # Check size
+                if os.path.getsize(temp_file.name) >= MAX_SIZE:
+                    os.unlink(temp_file.name)
+                    # Split into two 90-second chunks
+                    for subchunk in range(2):
+                        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as sub_file:
+                            sub_cmd = [
+                                'ffmpeg', '-y',
+                                '-ss', str(current_time + (subchunk * 90)),
+                                '-t', '90',
+                                '-i', file_path,
+                                '-b:a', '192k',
+                                '-acodec', 'libmp3lame',
+                                sub_file.name
+                            ]
+                            subprocess.run(sub_cmd, capture_output=True, check=True)
+                            yield sub_file.name
+                else:
+                    yield temp_file.name
+            
+            current_time += float(CHUNK_DURATION)
+            
+    except subprocess.CalledProcessError as e:
+        logging.error(f"FFmpeg error: {e.stderr.decode() if e.stderr else str(e)}")
+        raise
     except Exception as e:
-        logging.warning(f"Error during audio splitting: {str(e)}")
-        # Clean up any temporary files
-        for seg_file in segments:
-            try:
-                os.remove(seg_file)
-            except:
-                pass
-        raise ValueError(f"Error during audio splitting: {str(e)}")
+        logging.error(f"Error in split_audio_streaming: {str(e)}")
+        raise
 
 def transcribe_segment(file_path):
     """Transcribe a single audio segment"""
@@ -179,32 +195,51 @@ def update_progress(session_id, current, total):
 
 def process_audio_file(file_path, session_id):
     """Process audio file with progress tracking"""
-    file_size = os.path.getsize(file_path)
-    
-    # Initialize progress before starting processing
-    update_progress(session_id, 0, 1)  # Default to 1 segment
-    
-    if file_size > MAX_SEGMENT_SIZE:
-        segments = split_audio(file_path)
+    try:
+        # Get quick initial estimate from file size
+        file_size = os.path.getsize(file_path)
+        estimated_segments = estimate_segments(file_size)
+        update_progress(session_id, 0, estimated_segments)
+        
+        segments_processed = 0
         transcriptions = []
-        total_segments = len(segments)
+        segments_to_cleanup = []
         
-        # Update progress with actual total segments
-        update_progress(session_id, 0, total_segments)
+        # Process segments as they're created
+        for segment_path in split_audio_streaming(file_path):
+            segments_to_cleanup.append(segment_path)
+            try:
+                transcription = transcribe_segment(segment_path)
+                transcriptions.append(transcription)
+                segments_processed += 1
+                
+                # Update progress
+                total_segments = max(estimated_segments, segments_processed + 1)
+                update_progress(session_id, segments_processed, total_segments)
+                
+            except Exception as e:
+                logging.error(f"Error processing segment: {str(e)}")
+                raise
+            finally:
+                # Clean up segment immediately after processing
+                try:
+                    os.unlink(segment_path)
+                    segments_to_cleanup.remove(segment_path)
+                except:
+                    pass
         
-        try:
-            for index, segment in enumerate(segments, 1):
-                segment_transcription = transcribe_segment(segment)
-                transcriptions.append(segment_transcription)
-                update_progress(session_id, index, total_segments)
-        finally:
-            cleanup_segments(segments)
-            
         return ' '.join(transcriptions)
-    else:
-        result = transcribe_segment(file_path)
-        update_progress(session_id, 1, 1)  # Mark as complete
-        return result
+            
+    except Exception as e:
+        logging.error(f"Error in process_audio_file: {str(e)}")
+        raise
+    finally:
+        # Clean up any remaining segments
+        for segment in segments_to_cleanup:
+            try:
+                os.unlink(segment)
+            except:
+                pass
 
 @app.route('/check-progress/<session_id>')
 def check_progress(session_id):
@@ -235,21 +270,19 @@ def upload_audio():
         filename = secure_filename(file.filename)
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
-        # Log before saving
-        logging.info(f"Attempting to save file to: {file_path}")
+        # Save file and get size
         file.save(file_path)
-        logging.info(f"Successfully saved file to: {file_path}")
+        file_size = os.path.getsize(file_path)
         
-        # Log before transcription
-        logging.info("Starting transcription process")
         session_id = request.form.get('session_id')
         if not session_id:
             return jsonify({'error': 'No session ID provided'}), 400
             
-        # Initialize progress data immediately
-        update_progress(session_id, 0, 1)  # Start with default values
+        # Initialize progress with estimated segments immediately
+        estimated_segments = estimate_segments(file_size)
+        update_progress(session_id, 0, estimated_segments)
         
-        # Process file in a separate thread to not block progress checks
+        # Start processing in background
         def process_async():
             try:
                 transcription = process_audio_file(file_path, session_id)
