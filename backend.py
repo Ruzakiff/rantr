@@ -3,10 +3,8 @@ import logging
 from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, render_template
 from werkzeug.utils import secure_filename
 from openai import OpenAI
-from pydub import AudioSegment
 import tempfile
 from threading import Lock
-import subprocess
 import ffmpeg
 
 # Configure logging
@@ -29,7 +27,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 # Initialize OpenAI client
 client = OpenAI()
 
-# Add near other app configurations
+# Progress tracking
 progress_data = {}
 progress_lock = Lock()
 
@@ -48,52 +46,18 @@ def allowed_file(filename):
     logging.debug(f"File '{filename}' allowed: {is_allowed}")
     return is_allowed
 
-def calculate_optimal_chunk_duration(audio):
-    """Calculate optimal chunk duration based on audio's bytes-per-second rate"""
-    bytes_per_sec = (audio.frame_rate * audio.frame_width * audio.channels) / 8
-    target_size = 24.5 * 1024 * 1024  # 24.5MB in bytes
-    optimal_duration = (target_size / bytes_per_sec) * 1000  # Convert to milliseconds
-    logging.debug(f"Calculated optimal chunk duration: {optimal_duration} ms")
-    return int(optimal_duration)
-
-def binary_search_optimal_duration(audio, start_duration, max_attempts=5):
-    """Fine-tune chunk duration using binary search with sample"""
-    # Only test with first 30 seconds of audio for faster calculation
-    test_audio = audio[:30000]  # First 30 seconds
-    
-    min_duration = int(start_duration // 2)  # Ensure integer
-    max_duration = int(start_duration * 1.5)  # Ensure integer
-    optimal_duration = int(start_duration)  # Ensure integer
-    
-    for attempt in range(max_attempts):
-        test_segment = test_audio[:optimal_duration]
-        with tempfile.NamedTemporaryFile(suffix='.mp3') as temp_file:
-            test_segment.export(temp_file.name, format='mp3', parameters=["-b:a", "192k"])
-            size = os.path.getsize(temp_file.name)
-            
-            # Scale size estimate to full duration
-            estimated_full_size = size * (len(audio) / len(test_audio))
-            
-            if estimated_full_size > MAX_SEGMENT_SIZE:
-                max_duration = optimal_duration
-                optimal_duration = int((min_duration + optimal_duration) // 2)  # Ensure integer
-            elif estimated_full_size < MAX_SEGMENT_SIZE * 0.9:
-                min_duration = optimal_duration
-                optimal_duration = int((optimal_duration + max_duration) // 2)  # Ensure integer
-            else:
-                break
-    
-    return optimal_duration
-
-def estimate_segments(file_size):
-    """Estimate number of segments based on file size"""
-    # Assume roughly 1MB per minute at 192kbps
-    # Use 20MB as safe segment size for estimation
-    estimated_segments = max(1, file_size // (20 * 1024 * 1024))
-    return int(estimated_segments)
+def update_progress(session_id, current, total, status=None):
+    """Update progress for a given session with thread safety"""
+    with progress_lock:
+        progress_data[session_id] = {
+            'current': current,
+            'total': total,
+            'percentage': int((current / total) * 100) if total > 0 else 0,
+            'status': status or 'Processing...'
+        }
 
 def split_audio_streaming(file_path):
-    """Split audio file into chunks, optimizing for fewer segments while staying safe"""
+    """Split audio file into chunks, streaming with ffmpeg"""
     try:
         # Get duration using ffprobe
         probe = ffmpeg.probe(file_path)
@@ -170,45 +134,22 @@ def transcribe_segment(file_path):
                 timestamp_granularities=["segment"]
             )
         logging.info(f"Transcribed segment: {file_path}")
-        
-        # Log the response for debugging
-        logging.debug(f"Transcript response type: {type(transcript)}")
-        logging.debug(f"Transcript response: {transcript}")
-        
-        # Extract just the text field from the response
         return transcript.text
         
     except Exception as e:
         logging.error(f"Error in transcribe_segment: {str(e)}")
-        # Log the full error details
-        logging.error(f"Full error details: {str(e.__dict__)}")
         raise
-
-def cleanup_segments(segment_files):
-    """Clean up temporary segment files"""
-    for file_path in segment_files:
-        try:
-            os.remove(file_path)
-            logging.info(f"Removed temporary segment file: {file_path}")
-        except Exception as e:
-            logging.error(f"Error cleaning up {file_path}: {str(e)}")
-
-def update_progress(session_id, current, total):
-    """Update progress for a given session"""
-    with progress_lock:
-        progress_data[session_id] = {
-            'current': current,
-            'total': total,
-            'percentage': (current / total * 100) if total > 0 else 0,
-            'status': 'processing' if current < total else 'complete'
-        }
 
 def process_audio_file(file_path, session_id):
     """Process audio file with progress tracking"""
     try:
+        # Start progress immediately
+        update_progress(session_id, 0, 1, status="Analyzing audio file...")
+        
         # Get duration for initial estimate
         probe = ffmpeg.probe(file_path)
         duration = float(probe['format']['duration'])
+        minutes = int(duration / 60)
         
         # Test first chunk to determine chunk size
         with tempfile.NamedTemporaryFile(suffix='.mp3') as test_file:
@@ -225,8 +166,9 @@ def process_audio_file(file_path, session_id):
         chunk_duration = FALLBACK_DURATION if use_smaller_chunks else OPTIMAL_DURATION
         estimated_segments = max(1, int(duration / chunk_duration) + 1)
         
-        # Initialize progress
-        update_progress(session_id, 0, estimated_segments)
+        # Update progress with estimated time
+        update_progress(session_id, 0, estimated_segments, 
+                       status=f"Starting transcription... (about {minutes} minute{'s' if minutes != 1 else ''} of audio)")
         
         segments_processed = 0
         transcriptions = []
@@ -243,7 +185,12 @@ def process_audio_file(file_path, session_id):
                 transcriptions.append(transcription)
                 segments_processed += 1
                 
-                update_progress(session_id, segments_processed, estimated_segments)
+                # More user-friendly progress messages
+                progress_msg = f"Transcribing audio... ({segments_processed} of {estimated_segments} parts complete)"
+                if segments_processed == estimated_segments:
+                    progress_msg = "Finalizing transcription..."
+                
+                update_progress(session_id, segments_processed, estimated_segments, status=progress_msg)
                 
             except Exception as e:
                 logging.error(f"Error processing segment: {str(e)}")
@@ -256,6 +203,12 @@ def process_audio_file(file_path, session_id):
             
     except Exception as e:
         logging.error(f"Error in process_audio_file: {str(e)}")
+        # Update progress with error status
+        with progress_lock:
+            progress_data[session_id].update({
+                'status': 'Error: Failed to process audio file',
+                'error': str(e)
+            })
         raise
 
 @app.route('/check-progress/<session_id>')
@@ -287,18 +240,13 @@ def upload_audio():
         filename = secure_filename(file.filename)
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
-        # Save file and get size
+        # Save file
         file.save(file_path)
-        file_size = os.path.getsize(file_path)
         
         session_id = request.form.get('session_id')
         if not session_id:
             return jsonify({'error': 'No session ID provided'}), 400
             
-        # Initialize progress with estimated segments immediately
-        estimated_segments = estimate_segments(file_size)
-        update_progress(session_id, 0, estimated_segments)
-        
         # Start processing in background
         def process_async():
             try:
@@ -356,14 +304,8 @@ def view_blog():
         return "Blog post not found", 404
     
     try:
-        # Get example blog text for the rewrite feature
-        example_blog_path = os.path.join(app.static_folder, 'example_blog.txt')
-        with open(example_blog_path, 'r') as f:
-            blog_txt = f.read()
-        
         return render_template('blog.html', 
-                             blog_posts=[app.blog_posts[post_id]], 
-                             blog_txt=blog_txt)
+                             blog_posts=[app.blog_posts[post_id]])
     except Exception as e:
         logging.error(f"Error rendering blog template: {str(e)}")
         return f"Error rendering blog template: {str(e)}", 500
