@@ -7,6 +7,7 @@ from pydub import AudioSegment
 import tempfile
 from threading import Lock
 import subprocess
+import ffmpeg
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,8 +20,9 @@ app = Flask(__name__,
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg', 'm4a'}
-MAX_SEGMENT_SIZE = 25 * 1024 * 1024  # 25MB in bytes
-SEGMENT_DURATION = 25 * 60 * 1000     # 25 minutes in milliseconds
+MAX_SEGMENT_SIZE = 24 * 1024 * 1024  # 24MB to be safe
+OPTIMAL_DURATION = 180  # Start with 3 minutes (usually ~4-5MB at 192kbps)
+FALLBACK_DURATION = 90  # Fallback to 90 seconds if audio is dense
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -91,60 +93,68 @@ def estimate_segments(file_size):
     return int(estimated_segments)
 
 def split_audio_streaming(file_path):
-    """Split audio file into chunks, streaming with ffmpeg"""
-    MAX_SIZE = 24 * 1024 * 1024  # 24MB to be safe
-    CHUNK_DURATION = "180"  # 3 minutes in seconds
-    
+    """Split audio file into chunks, optimizing for fewer segments while staying safe"""
     try:
         # Get duration using ffprobe
-        probe_cmd = [
-            'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-            '-of', 'default=noprint_wrappers=1:nokey=1', file_path
-        ]
-        duration = float(subprocess.check_output(probe_cmd).decode().strip())
+        probe = ffmpeg.probe(file_path)
+        duration = float(probe['format']['duration'])
+        
+        # Test first chunk to determine if we need smaller segments
+        with tempfile.NamedTemporaryFile(suffix='.mp3') as test_file:
+            stream = ffmpeg.input(file_path, ss=0, t=OPTIMAL_DURATION)
+            stream = ffmpeg.output(stream, test_file.name, 
+                acodec='libmp3lame', 
+                b='192k',
+                loglevel='error'
+            )
+            ffmpeg.run(stream, overwrite_output=True)
+            
+            # Determine if we need to use smaller chunks
+            use_smaller_chunks = os.path.getsize(test_file.name) >= MAX_SEGMENT_SIZE
+        
+        # Set chunk size based on test
+        chunk_duration = FALLBACK_DURATION if use_smaller_chunks else OPTIMAL_DURATION
+        logging.info(f"Using {chunk_duration}s chunks based on initial test")
         
         # Process chunks
         current_time = 0
         while current_time < duration:
             with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
-                # Extract chunk using ffmpeg
-                cmd = [
-                    'ffmpeg', '-y',  # Overwrite output files
-                    '-ss', str(current_time),  # Start time
-                    '-t', CHUNK_DURATION,  # Duration of chunk
-                    '-i', file_path,  # Input file
-                    '-b:a', '192k',  # Audio bitrate
-                    '-acodec', 'libmp3lame',  # MP3 codec
-                    temp_file.name  # Output file
-                ]
+                try:
+                    stream = ffmpeg.input(file_path, ss=current_time, t=chunk_duration)
+                    stream = ffmpeg.output(stream, temp_file.name, 
+                        acodec='libmp3lame', 
+                        b='192k',
+                        loglevel='error'
+                    )
+                    ffmpeg.run(stream, overwrite_output=True)
+                    
+                    # Final size check
+                    if os.path.getsize(temp_file.name) >= MAX_SEGMENT_SIZE:
+                        os.unlink(temp_file.name)
+                        # Split into smaller chunks
+                        for subchunk in range(2):
+                            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as sub_file:
+                                substream = ffmpeg.input(file_path, 
+                                    ss=current_time + (subchunk * (chunk_duration/2)), 
+                                    t=chunk_duration/2
+                                )
+                                substream = ffmpeg.output(substream, sub_file.name,
+                                    acodec='libmp3lame',
+                                    b='192k',
+                                    loglevel='error'
+                                )
+                                ffmpeg.run(substream, overwrite_output=True)
+                                yield sub_file.name
+                    else:
+                        yield temp_file.name
                 
-                subprocess.run(cmd, capture_output=True, check=True)
-                
-                # Check size
-                if os.path.getsize(temp_file.name) >= MAX_SIZE:
-                    os.unlink(temp_file.name)
-                    # Split into two 90-second chunks
-                    for subchunk in range(2):
-                        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as sub_file:
-                            sub_cmd = [
-                                'ffmpeg', '-y',
-                                '-ss', str(current_time + (subchunk * 90)),
-                                '-t', '90',
-                                '-i', file_path,
-                                '-b:a', '192k',
-                                '-acodec', 'libmp3lame',
-                                sub_file.name
-                            ]
-                            subprocess.run(sub_cmd, capture_output=True, check=True)
-                            yield sub_file.name
-                else:
-                    yield temp_file.name
+                except ffmpeg.Error as e:
+                    logging.error(f"FFmpeg error: {e.stderr.decode()}")
+                    raise
             
-            current_time += float(CHUNK_DURATION)
+            current_time += chunk_duration
             
-    except subprocess.CalledProcessError as e:
-        logging.error(f"FFmpeg error: {e.stderr.decode() if e.stderr else str(e)}")
-        raise
     except Exception as e:
         logging.error(f"Error in split_audio_streaming: {str(e)}")
         raise
@@ -196,50 +206,57 @@ def update_progress(session_id, current, total):
 def process_audio_file(file_path, session_id):
     """Process audio file with progress tracking"""
     try:
-        # Get quick initial estimate from file size
-        file_size = os.path.getsize(file_path)
-        estimated_segments = estimate_segments(file_size)
+        # Get duration for initial estimate
+        probe = ffmpeg.probe(file_path)
+        duration = float(probe['format']['duration'])
+        
+        # Test first chunk to determine chunk size
+        with tempfile.NamedTemporaryFile(suffix='.mp3') as test_file:
+            stream = ffmpeg.input(file_path, ss=0, t=OPTIMAL_DURATION)
+            stream = ffmpeg.output(stream, test_file.name, 
+                acodec='libmp3lame', 
+                b='192k',
+                loglevel='error'
+            )
+            ffmpeg.run(stream, overwrite_output=True)
+            use_smaller_chunks = os.path.getsize(test_file.name) >= MAX_SEGMENT_SIZE
+        
+        # Calculate segments based on test
+        chunk_duration = FALLBACK_DURATION if use_smaller_chunks else OPTIMAL_DURATION
+        estimated_segments = max(1, int(duration / chunk_duration) + 1)
+        
+        # Initialize progress
         update_progress(session_id, 0, estimated_segments)
         
         segments_processed = 0
         transcriptions = []
-        segments_to_cleanup = []
+        current_segment = None
         
-        # Process segments as they're created
+        # Process segments
         for segment_path in split_audio_streaming(file_path):
-            segments_to_cleanup.append(segment_path)
             try:
+                if current_segment and os.path.exists(current_segment):
+                    os.unlink(current_segment)
+                
+                current_segment = segment_path
                 transcription = transcribe_segment(segment_path)
                 transcriptions.append(transcription)
                 segments_processed += 1
                 
-                # Update progress
-                total_segments = max(estimated_segments, segments_processed + 1)
-                update_progress(session_id, segments_processed, total_segments)
+                update_progress(session_id, segments_processed, estimated_segments)
                 
             except Exception as e:
                 logging.error(f"Error processing segment: {str(e)}")
                 raise
-            finally:
-                # Clean up segment immediately after processing
-                try:
-                    os.unlink(segment_path)
-                    segments_to_cleanup.remove(segment_path)
-                except:
-                    pass
         
+        if current_segment and os.path.exists(current_segment):
+            os.unlink(current_segment)
+            
         return ' '.join(transcriptions)
             
     except Exception as e:
         logging.error(f"Error in process_audio_file: {str(e)}")
         raise
-    finally:
-        # Clean up any remaining segments
-        for segment in segments_to_cleanup:
-            try:
-                os.unlink(segment)
-            except:
-                pass
 
 @app.route('/check-progress/<session_id>')
 def check_progress(session_id):
