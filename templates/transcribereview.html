@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcription Review</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Floating Audio Controls */
+        .audio-controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            width: 90%;
+            max-width: 800px;
+            backdrop-filter: blur(10px);
+            background-color: rgba(245, 245, 245, 0.95);
+            transition: opacity 0.3s ease;
+        }
+
+        /* Compact mode for audio controls */
+        .audio-controls.compact {
+            padding: 8px;
+        }
+
+        .audio-controls.compact .playback-controls {
+            margin-bottom: 5px;
+        }
+
+        /* Toggle button for expanding/collapsing */
+        .toggle-controls {
+            position: absolute;
+            top: -15px;
+            right: 10px;
+            background: #007bff;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        /* Adjust main content to account for floating controls */
+        .editor-section {
+            margin-bottom: 100px; /* Space for floating controls */
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        /* Make controls semi-transparent on hover over editor */
+        .editor-container:hover + .audio-controls {
+            opacity: 0.7;
+        }
+
+        .audio-controls:hover {
+            opacity: 1 !important;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .audio-controls {
+                width: 95%;
+                padding: 10px;
+            }
+
+            .playback-controls {
+                flex-wrap: wrap;
+            }
+
+            .speed-controls {
+                flex-basis: 100%;
+                justify-content: flex-start;
+                margin-top: 5px;
+            }
+        }
+
+        .editor-toolbar {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+
+        .editor-container {
+            flex-grow: 1;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        #transcript-editor {
+            width: 100%;
+            height: 100%;
+            border: none;
+            resize: none;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        /* Utility Classes */
+        .low-confidence {
+            background-color: #fff3cd;
+        }
+
+        .possible-error {
+            background-color: #f8d7da;
+        }
+
+        button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .view-mode-toggle {
+            background: #6c757d;
+        }
+
+        #search-replace {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input[type="text"] {
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Editor Section -->
+    <div class="editor-section">
+        <div class="editor-toolbar">
+            <div id="search-replace">
+                <input type="text" id="search-text" placeholder="Find">
+                <input type="text" id="replace-text" placeholder="Replace">
+                <button id="replace-btn">Replace All</button>
+            </div>
+            <button id="undo" title="Undo">↩</button>
+            <button id="redo" title="Redo">↪</button>
+            <button class="view-mode-toggle" id="toggle-view">Raw Transcript</button>
+        </div>
+        <div class="editor-container">
+            <textarea id="transcript-editor" spellcheck="true"></textarea>
+        </div>
+    </div>
+
+    <!-- Floating Audio Controls -->
+    <div class="audio-controls" id="audio-controls">
+        <button class="toggle-controls" id="toggle-controls" title="Toggle controls">^</button>
+        <div class="playback-controls">
+            <button id="play-pause">Play</button>
+            <button id="jump-back">-5s</button>
+            <button id="jump-forward">+5s</button>
+            <div class="speed-controls">
+                <label for="playback-speed">Speed:</label>
+                <select id="playback-speed">
+                    <option value="0.5">0.5x</option>
+                    <option value="1.0" selected>1.0x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2.0">2.0x</option>
+                </select>
+            </div>
+            <label>
+                <input type="checkbox" id="auto-scroll"> Auto-scroll
+            </label>
+        </div>
+        <div class="scrubber-container">
+            <span id="current-time">0:00</span>
+            <input type="range" id="scrubber" min="0" max="100" value="0">
+            <span id="duration">0:00</span>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize audio player and controls
+            const playPauseBtn = document.getElementById('play-pause');
+            const scrubber = document.getElementById('scrubber');
+            const speedSelect = document.getElementById('playback-speed');
+            const autoScrollCheck = document.getElementById('auto-scroll');
+            
+            // Editor functionality
+            const editor = document.getElementById('transcript-editor');
+            const undoBtn = document.getElementById('undo');
+            const redoBtn = document.getElementById('redo');
+            const toggleViewBtn = document.getElementById('toggle-view');
+            const replaceBtn = document.getElementById('replace-btn');
+
+            // Initialize with sample text (replace with actual transcript)
+            editor.value = "Your transcript will appear here...";
+
+            // Implement undo/redo stack
+            let undoStack = [];
+            let redoStack = [];
+
+            editor.addEventListener('input', function() {
+                undoStack.push(editor.value);
+                redoStack = []; // Clear redo stack on new edit
+            });
+
+            undoBtn.addEventListener('click', function() {
+                if (undoStack.length > 0) {
+                    redoStack.push(editor.value);
+                    editor.value = undoStack.pop();
+                }
+            });
+
+            redoBtn.addEventListener('click', function() {
+                if (redoStack.length > 0) {
+                    undoStack.push(editor.value);
+                    editor.value = redoStack.pop();
+                }
+            });
+
+            // Implement replace functionality
+            replaceBtn.addEventListener('click', function() {
+                const searchText = document.getElementById('search-text').value;
+                const replaceText = document.getElementById('replace-text').value;
+                if (searchText) {
+                    undoStack.push(editor.value);
+                    editor.value = editor.value.replaceAll(searchText, replaceText);
+                }
+            });
+
+            // Toggle view mode
+            let isRawView = true;
+            toggleViewBtn.addEventListener('click', function() {
+                isRawView = !isRawView;
+                toggleViewBtn.textContent = isRawView ? "Raw Transcript" : "Processed View";
+                // Implement view switching logic here
+            });
+
+            // Add floating controls functionality
+            const audioControls = document.getElementById('audio-controls');
+            const toggleControls = document.getElementById('toggle-controls');
+            let isCompact = false;
+
+            toggleControls.addEventListener('click', function() {
+                isCompact = !isCompact;
+                audioControls.classList.toggle('compact');
+                toggleControls.textContent = isCompact ? 'v' : '^';
+                toggleControls.style.transform = isCompact ? 'rotate(180deg)' : '';
+            });
+
+            // Optional: Hide controls when scrolling
+            let scrollTimeout;
+            window.addEventListener('scroll', function() {
+                audioControls.style.opacity = '0.3';
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    audioControls.style.opacity = '1';
+                }, 1000);
+            });
+
+            // Optional: Drag functionality for the controls
+            let isDragging = false;
+            let currentX;
+            let currentY;
+            let initialX;
+            let initialY;
+            let xOffset = 0;
+            let yOffset = 0;
+
+            audioControls.addEventListener('mousedown', dragStart);
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', dragEnd);
+
+            function dragStart(e) {
+                if (e.target === audioControls || e.target.parentElement === audioControls) {
+                    initialX = e.clientX - xOffset;
+                    initialY = e.clientY - yOffset;
+                    isDragging = true;
+                }
+            }
+
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+                    xOffset = currentX;
+                    yOffset = currentY;
+                    setTranslate(currentX, currentY, audioControls);
+                }
+            }
+
+            function dragEnd() {
+                isDragging = false;
+            }
+
+            function setTranslate(xPos, yPos, el) {
+                el.style.transform = `translate(${xPos}px, ${yPos}px)`;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generated Blog Posts</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .blog-post {
+            position: relative;
+            background-color: white;
+            padding: 20px;
+            margin-bottom: 20px; /* Add some space between blog posts */
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            border: 2px solid red; /* Temporary style to visualize blog post boundaries */
+            min-height: 200px; /* Ensure each blog post has a minimum height */
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .metatags-button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+        }
+        .dialog {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .dialog-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .chat-button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+        }
+        .chat-dialog {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            height: 400px;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-header {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px;
+            font-weight: bold;
+            border-top-left-radius: 5px;
+            border-top-right-radius: 5px;
+        }
+        .chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .chat-input {
+            display: flex;
+            margin-top: 10px;
+        }
+        .chat-input input {
+            flex-grow: 1;
+            padding: 5px;
+            margin-right: 5px;
+        }
+        .chat-input button {
+            padding: 5px 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .close-chat {
+            float: right;
+            cursor: pointer;
+        }
+        .default-buttons {
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+        .default-button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin-right: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .loading-overlay {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.7);
+            z-index: 1000;
+        }
+
+        .loading-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        .loading-indicator {
+            color: #4CAF50;
+            font-weight: bold;
+            margin-top: 10px;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        /* Add new styles for transcript-specific elements */
+        .transcript-metadata {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+        
+        .timestamp {
+            color: #888;
+            font-size: 0.8em;
+            margin-right: 10px;
+        }
+        
+        .word-confidence {
+            background-color: rgba(76, 175, 80, 0.1);
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        /* Add new styles for topic selection interface */
+        .topic-interface {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .transcript-pane {
+            flex: 1;
+            max-height: 600px;
+            overflow-y: auto;
+            padding: 20px;
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .topic-cards {
+            width: 350px;
+            max-height: 600px;
+            overflow-y: auto;
+            padding: 20px;
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .topic-card {
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: move;
+        }
+
+        .topic-card-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .topic-card-summary {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .topic-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .topic-chunk-slider {
+            flex: 1;
+        }
+
+        .highlighted-segment {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .highlighted-segment:hover {
+            background-color: rgba(76, 175, 80, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <h1>{% if blog_posts[0].keyword == 'audio_transcript' %}Audio Transcript{% else %}Generated Blog Posts{% endif %}</h1>
+    
+    {% for post in blog_posts %}
+    <div class="blog-post">
+        <h2>{{ post.title }}</h2>
+        
+        <!-- Add metadata section for transcripts -->
+        {% if post.keyword == 'audio_transcript' %}
+        <div class="transcript-metadata">
+            <p><strong>Source:</strong> Audio File</p>
+            {% if post.duration %}
+            <p><strong>Duration:</strong> {{ post.duration }}</p>
+            {% endif %}
+        </div>
+        {% else %}
+        <p><strong>Keyword:</strong> {{ post.keyword }}</p>
+        {% endif %}
+
+        <div id="blog-content-{{ loop.index0 }}" 
+             data-title="{{ post.title }}"
+             {% if post.keyword == 'audio_transcript' %}data-type="transcript"{% endif %}>
+            {{ post.content | safe }}
+        </div>
+
+        <div class="loading-indicator" style="display: none;">Loading...</div>
+        
+        <!-- Modify buttons based on content type -->
+        <div class="default-buttons">
+            {% if post.keyword == 'audio_transcript' %}
+            <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 
+                'Clean up this transcript by removing filler words and fixing grammar while maintaining the original meaning.')">
+                Clean Transcript
+            </button>
+            <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 
+                'Convert this transcript into a properly formatted blog post.')">
+                Convert to Blog Post
+            </button>
+            {% else %}
+            <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 
+                `rewrite the entire above blog post using the below formatting and voice of the example below, do not change the topic of the original blog, just maintain voice of below example:
+                ${`{{ blog_txt | safe }}`}`)">
+                Rewrite Using Armarkat Voice
+            </button>
+            {% endif %}
+            <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 'need meta and tags for blog')">Get meta and tags</button>
+            <button class="default-button" onclick="exportToGoogleDrive({{ loop.index0 }})">Export to Google Drive</button>
+        </div>
+
+        <div class="chat-input">
+            <input type="text" id="chat-input-{{ loop.index0 }}" placeholder="Ask a question or suggest an edit...">
+            <button onclick="sendMessage({{ loop.index0 }})">Send</button>
+        </div>
+
+        {% if post.keyword == 'audio_transcript' %}
+        <div class="topic-controls">
+            <label>Topic Chunk Size:</label>
+            <input type="range" class="topic-chunk-slider" min="1" max="5" value="3">
+            <button class="default-button" onclick="approveAllTopics({{ loop.index0 }})">
+                Approve All Topics
+            </button>
+        </div>
+
+        <div class="topic-interface">
+            <div class="transcript-pane" id="transcript-pane-{{ loop.index0 }}">
+                {{ post.content | safe }}
+            </div>
+            
+            <div class="topic-cards" id="topic-cards-{{ loop.index0 }}">
+                <!-- Topic cards will be dynamically inserted here -->
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    <script>
+        function sendDefaultMessage(index, message) {
+            sendMessage(index, message);
+        }
+
+        function showLoading(index) {
+            const blogPost = document.querySelectorAll('.blog-post')[index];
+            if (blogPost) {
+                const loadingIndicator = blogPost.querySelector('.loading-indicator');
+                if (loadingIndicator) {
+                    loadingIndicator.style.display = 'block';
+                } else {
+                    console.error(`Loading indicator not found for blog post at index ${index}`);
+                }
+            } else {
+                console.error(`Blog post not found at index ${index}`);
+            }
+        }
+
+        function hideLoading(index) {
+            const blogPost = document.querySelectorAll('.blog-post')[index];
+            if (blogPost) {
+                const loadingIndicator = blogPost.querySelector('.loading-indicator');
+                if (loadingIndicator) {
+                    loadingIndicator.style.display = 'none';
+                } else {
+                    console.error(`Loading indicator not found for blog post at index ${index}`);
+                }
+            } else {
+                console.error(`Blog post not found at index ${index}`);
+            }
+        }
+
+        // Add function to handle transcript-specific formatting
+        function formatTranscript(content, timestamps) {
+            if (!timestamps) return content;
+            
+            return content.split(' ').map((word, index) => {
+                if (timestamps[index]) {
+                    return `<span class="word" 
+                                 data-start="${timestamps[index].start}" 
+                                 data-end="${timestamps[index].end}"
+                                 title="Confidence: ${timestamps[index].confidence}">
+                            ${word}
+                        </span>`;
+                }
+                return word;
+            }).join(' ');
+        }
+
+        // Modify existing sendMessage function to handle transcript data
+        function sendMessage(index, customMessage = null) {
+            const input = document.getElementById(`chat-input-${index}`);
+            const message = customMessage || input.value.trim();
+            if (message) {
+                showLoading(index);
+                const blogContentElement = document.getElementById(`blog-content-${index}`);
+                const isTranscript = blogContentElement.getAttribute('data-type') === 'transcript';
+                const blogContent = `Title: ${blogContentElement.getAttribute('data-title')}\n\n${blogContentElement.innerHTML}`;
+                
+                // Get the content ID from the URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const contentId = urlParams.get('id');
+                
+                // Send message to backend
+                fetch(`/chat/${index}?id=${contentId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        message: message,
+                        blogContent: blogContent,
+                        isTranscript: isTranscript
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    const content = isTranscript && data.timestamps ? 
+                        formatTranscript(data.response, data.timestamps) : 
+                        data.response;
+                    
+                    document.getElementById(`blog-content-${index}`).innerHTML = content;
+                    if (!customMessage) {
+                        input.value = '';
+                    }
+                    hideLoading(index);
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                    alert('Error processing message');
+                    hideLoading(index);
+                });
+            }
+        }
+
+        function exportToGoogleDrive(index) {
+            showLoading(index);
+            const blogContentElement = document.getElementById(`blog-content-${index}`);
+            const blogTitle = blogContentElement.getAttribute('data-title');
+            const blogContent = blogContentElement.innerHTML;
+            
+            fetch('/export-to-drive', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    title: blogTitle,
+                    content: blogContent
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Blog post exported to Google Drive successfully!');
+                } else {
+                    alert('Error exporting to Google Drive: ' + data.error);
+                }
+                hideLoading(index);
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+                alert('Error exporting to Google Drive');
+                hideLoading(index);
+            });
+        }
+
+        // Add event listener for Enter key in input fields
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatInputs = document.querySelectorAll('[id^="chat-input-"]');
+            chatInputs.forEach((input, index) => {
+                input.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        sendMessage(index);
+                    }
+                });
+            });
+        });
+
+        // Add new functions for topic selection
+        function initializeTopicSelection(index) {
+            const transcriptPane = document.getElementById(`transcript-pane-${index}`);
+            const topicCards = document.getElementById(`topic-cards-${index}`);
+            
+            // Initialize drag and drop for topic cards
+            new Sortable(topicCards, {
+                animation: 150,
+                onEnd: function(evt) {
+                    updateTopicOrder(index);
+                }
+            });
+
+            // Add event listener for chunk size slider
+            const slider = document.querySelector('.topic-chunk-slider');
+            slider.addEventListener('change', () => {
+                updateTopicChunks(index, slider.value);
+            });
+        }
+
+        function updateTopicChunks(index, chunkSize) {
+            // Implementation for updating topic chunks based on slider value
+            showLoading(index);
+            fetch(`/update-topics/${index}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ chunkSize: chunkSize })
+            })
+            .then(response => response.json())
+            .then(data => {
+                updateTopicCards(index, data.topics);
+                hideLoading(index);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                hideLoading(index);
+            });
+        }
+
+        function updateTopicCards(index, topics) {
+            const topicCards = document.getElementById(`topic-cards-${index}`);
+            topicCards.innerHTML = topics.map((topic, i) => `
+                <div class="topic-card" data-topic-id="${i}">
+                    <input type="text" class="topic-card-title" value="${topic.title}">
+                    <p class="topic-card-summary">${topic.summary}</p>
+                    <input type="checkbox" checked>
+                </div>
+            `).join('');
+        }
+
+        // Initialize topic selection when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            const transcripts = document.querySelectorAll('[data-type="transcript"]');
+            transcripts.forEach((transcript, index) => {
+                initializeTopicSelection(index);
+            });
+        });
+    </script>
+</body>
+</html>
+
