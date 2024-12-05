@@ -13,195 +13,123 @@
             background-color: #f4f4f4;
         }
         .blog-post {
-            position: relative;
             background-color: white;
             padding: 20px;
-            margin-bottom: 20px; /* Add some space between blog posts */
+            margin-bottom: 20px;
             border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            border: 2px solid red; /* Temporary style to visualize blog post boundaries */
-            min-height: 200px; /* Ensure each blog post has a minimum height */
         }
         h1, h2 {
             color: #333;
         }
-        .metatags-button {
-            background-color: #4CAF50;
-            border: none;
-            color: white;
-            padding: 10px 20px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
+        .blog-content {
+            margin: 20px 0;
+        }
+        [contenteditable="true"] {
+            border: 1px solid #ddd;
+            padding: 10px;
+            min-height: 200px;
+            background-color: #fff;
+        }
+        [contenteditable="true"]:focus {
+            outline: 2px solid #4CAF50;
+            border-color: transparent;
+        }
+        [contenteditable="true"]:hover {
+            background-color: #f9f9f9;
+        }
+        .transcript-editor {
             font-size: 16px;
-            margin: 4px 2px;
-            cursor: pointer;
-        }
-        .dialog {
-            display: none;
-            position: fixed;
-            z-index: 1;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            overflow: auto;
-            background-color: rgba(0,0,0,0.4);
-        }
-        .dialog-content {
-            background-color: #fefefe;
-            margin: 15% auto;
+            line-height: 1.8;
             padding: 20px;
-            border: 1px solid #888;
-            width: 80%;
+            white-space: pre-wrap;
         }
-        .close {
-            color: #aaa;
-            float: right;
-            font-size: 28px;
-            font-weight: bold;
+        .word {
+            position: relative;
+            padding: 0 2px;
+            border-radius: 3px;
         }
-        .close:hover,
-        .close:focus {
-            color: black;
-            text-decoration: none;
-            cursor: pointer;
+        .word:hover {
+            background-color: #f0f0f0;
+            cursor: text;
         }
-        .chat-button {
-            background-color: #4CAF50;
-            border: none;
-            color: white;
-            padding: 10px 20px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 4px 2px;
-            cursor: pointer;
+        .word.active {
+            background-color: #e3f2fd;
+            outline: 2px solid #2196f3;
         }
-        .chat-dialog {
-            display: none;
+        .word.repeated {
+            text-decoration: wavy underline #ff9800;
+        }
+        .word.odd-punctuation {
+            border-bottom: 1px dotted red;
+        }
+        .word.possible-name {
+            border-bottom: 1px dotted blue;
+        }
+        .word.number {
+            background-color: #e8f5e9;
+        }
+        /* Instructions tooltip */
+        .edit-instructions {
             position: fixed;
             bottom: 20px;
             right: 20px;
-            width: 300px;
-            height: 400px;
-            background-color: white;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            display: flex;
-            flex-direction: column;
-        }
-        .chat-header {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px;
-            font-weight: bold;
-            border-top-left-radius: 5px;
-            border-top-right-radius: 5px;
-        }
-        .chat-messages {
-            flex-grow: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-        .chat-input {
-            display: flex;
-            margin-top: 10px;
-        }
-        .chat-input input {
-            flex-grow: 1;
-            padding: 5px;
-            margin-right: 5px;
-        }
-        .chat-input button {
-            padding: 5px 10px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-        .close-chat {
-            float: right;
-            cursor: pointer;
-        }
-        .default-buttons {
-            margin-top: 10px;
-            margin-bottom: 10px;
-        }
-        .default-button {
-            background-color: #4CAF50;
-            border: none;
-            color: white;
-            padding: 10px 15px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
             font-size: 14px;
-            margin-right: 10px;
-            cursor: pointer;
-            border-radius: 4px;
-        }
-        .loading-overlay {
-            display: none;
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(255, 255, 255, 0.7);
+            max-width: 300px;
             z-index: 1000;
         }
 
-        .loading-spinner {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
+        .keyboard-shortcut {
+            display: inline-block;
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 0 2px;
         }
 
-        @keyframes spin {
-            0% { transform: translate(-50%, -50%) rotate(0deg); }
-            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        /* Highlight styles for different types of potential errors */
+        .word.active {
+            background-color: #e3f2fd;
+            outline: 2px solid #2196f3;
         }
 
-        .loading-indicator {
-            color: #4CAF50;
-            font-weight: bold;
-            margin-top: 10px;
-            animation: pulse 1s infinite;
+        .word.repeated {
+            text-decoration: wavy underline #ff9800;
         }
 
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
+        .word.odd-punctuation {
+            border-bottom: 1px dotted red;
         }
 
-        /* Add new styles for transcript-specific elements */
-        .transcript-metadata {
-            color: #666;
-            font-size: 0.9em;
-            margin-bottom: 10px;
+        .word.possible-name {
+            border-bottom: 1px dotted blue;
         }
-        
-        .timestamp {
-            color: #888;
-            font-size: 0.8em;
-            margin-right: 10px;
+
+        h2[contenteditable="true"] {
+            display: inline;
+            font-size: 1em;
+            font-weight: normal;
+            margin: 0;
+            padding: 0;
+            border: none;
         }
-        
-        .word-confidence {
-            background-color: rgba(76, 175, 80, 0.1);
-            padding: 2px 4px;
-            border-radius: 3px;
+
+        h2[contenteditable="true"]:hover {
+            background-color: #f0f0f0;
+        }
+
+        h2[contenteditable="true"]:focus {
+            outline: 1px solid #2196f3;
+            background-color: #fff;
+        }
+
+        .blog-content {
+            margin-top: 8px;
         }
     </style>
 </head>
@@ -210,197 +138,133 @@
     
     {% for post in blog_posts %}
     <div class="blog-post">
-        <h2>{{ post.title }}</h2>
+        <h2 contenteditable="true">{{ post.title }}</h2>
         
-        <!-- Add metadata section for transcripts -->
         {% if post.keyword == 'audio_transcript' %}
-        <div class="transcript-metadata">
-            <p><strong>Source:</strong> Audio File</p>
-            {% if post.duration %}
-            <p><strong>Duration:</strong> {{ post.duration }}</p>
-            {% endif %}
-        </div>
-        {% else %}
-        <p><strong>Keyword:</strong> {{ post.keyword }}</p>
+            <div class="transcript-metadata">
+                <p><strong>Source:</strong> Audio File</p>
+                {% if post.duration %}
+                    <p><strong>Duration:</strong> {{ post.duration }}</p>
+                {% endif %}
+            </div>
         {% endif %}
 
         <div id="blog-content-{{ loop.index0 }}" 
+             class="blog-content"
+             contenteditable="true"
              data-title="{{ post.title }}"
              {% if post.keyword == 'audio_transcript' %}data-type="transcript"{% endif %}>
             {{ post.content | safe }}
-        </div>
-
-        <div class="loading-indicator" style="display: none;">Loading...</div>
-        
-        <!-- Modify buttons based on content type -->
-        <div class="default-buttons">
-            {% if post.keyword == 'audio_transcript' %}
-            <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 
-                'Clean up this transcript by removing filler words and fixing grammar while maintaining the original meaning.')">
-                Clean Transcript
-            </button>
-            <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 
-                'Convert this transcript into a properly formatted blog post.')">
-                Convert to Blog Post
-            </button>
-            {% else %}
-            <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 
-                `rewrite the entire above blog post using the below formatting and voice of the example below, do not change the topic of the original blog, just maintain voice of below example:
-                ${`{{ blog_txt | safe }}`}`)">
-                Rewrite Using Armarkat Voice
-            </button>
-            {% endif %}
-            <button class="default-button" onclick="sendDefaultMessage({{ loop.index0 }}, 'need meta and tags for blog')">Get meta and tags</button>
-            <button class="default-button" onclick="exportToGoogleDrive({{ loop.index0 }})">Export to Google Drive</button>
-        </div>
-
-        <div class="chat-input">
-            <input type="text" id="chat-input-{{ loop.index0 }}" placeholder="Ask a question or suggest an edit...">
-            <button onclick="sendMessage({{ loop.index0 }})">Send</button>
         </div>
     </div>
     {% endfor %}
 
     <script>
-        function sendDefaultMessage(index, message) {
-            sendMessage(index, message);
-        }
-
-        function showLoading(index) {
-            const blogPost = document.querySelectorAll('.blog-post')[index];
-            if (blogPost) {
-                const loadingIndicator = blogPost.querySelector('.loading-indicator');
-                if (loadingIndicator) {
-                    loadingIndicator.style.display = 'block';
-                } else {
-                    console.error(`Loading indicator not found for blog post at index ${index}`);
-                }
-            } else {
-                console.error(`Blog post not found at index ${index}`);
-            }
-        }
-
-        function hideLoading(index) {
-            const blogPost = document.querySelectorAll('.blog-post')[index];
-            if (blogPost) {
-                const loadingIndicator = blogPost.querySelector('.loading-indicator');
-                if (loadingIndicator) {
-                    loadingIndicator.style.display = 'none';
-                } else {
-                    console.error(`Loading indicator not found for blog post at index ${index}`);
-                }
-            } else {
-                console.error(`Blog post not found at index ${index}`);
-            }
-        }
-
-        // Add function to handle transcript-specific formatting
-        function formatTranscript(content, timestamps) {
-            if (!timestamps) return content;
-            
-            return content.split(' ').map((word, index) => {
-                if (timestamps[index]) {
-                    return `<span class="word" 
-                                 data-start="${timestamps[index].start}" 
-                                 data-end="${timestamps[index].end}"
-                                 title="Confidence: ${timestamps[index].confidence}">
-                            ${word}
-                        </span>`;
-                }
-                return word;
-            }).join(' ');
-        }
-
-        // Modify existing sendMessage function to handle transcript data
-        function sendMessage(index, customMessage = null) {
-            const input = document.getElementById(`chat-input-${index}`);
-            const message = customMessage || input.value.trim();
-            if (message) {
-                showLoading(index);
-                const blogContentElement = document.getElementById(`blog-content-${index}`);
-                const isTranscript = blogContentElement.getAttribute('data-type') === 'transcript';
-                const blogContent = `Title: ${blogContentElement.getAttribute('data-title')}\n\n${blogContentElement.innerHTML}`;
-                
-                // Get the content ID from the URL
-                const urlParams = new URLSearchParams(window.location.search);
-                const contentId = urlParams.get('id');
-                
-                // Send message to backend
-                fetch(`/chat/${index}?id=${contentId}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ 
-                        message: message,
-                        blogContent: blogContent,
-                        isTranscript: isTranscript
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    const content = isTranscript && data.timestamps ? 
-                        formatTranscript(data.response, data.timestamps) : 
-                        data.response;
-                    
-                    document.getElementById(`blog-content-${index}`).innerHTML = content;
-                    if (!customMessage) {
-                        input.value = '';
-                    }
-                    hideLoading(index);
-                })
-                .catch((error) => {
-                    console.error('Error:', error);
-                    alert('Error processing message');
-                    hideLoading(index);
-                });
-            }
-        }
-
-        function exportToGoogleDrive(index) {
-            showLoading(index);
-            const blogContentElement = document.getElementById(`blog-content-${index}`);
-            const blogTitle = blogContentElement.getAttribute('data-title');
-            const blogContent = blogContentElement.innerHTML;
-            
-            fetch('/export-to-drive', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ 
-                    title: blogTitle,
-                    content: blogContent
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Blog post exported to Google Drive successfully!');
-                } else {
-                    alert('Error exporting to Google Drive: ' + data.error);
-                }
-                hideLoading(index);
-            })
-            .catch((error) => {
-                console.error('Error:', error);
-                alert('Error exporting to Google Drive');
-                hideLoading(index);
-            });
-        }
-
-        // Add event listener for Enter key in input fields
         document.addEventListener('DOMContentLoaded', function() {
-            const chatInputs = document.querySelectorAll('[id^="chat-input-"]');
-            chatInputs.forEach((input, index) => {
-                input.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        sendMessage(index);
+            function processTranscript(element) {
+                const text = element.textContent;
+                const words = text.split(/\s+/);
+                
+                element.innerHTML = words.map((word, index) => {
+                    let classes = ['word'];
+                    
+                    if (word.toLowerCase() === words[index - 1]?.toLowerCase()) {
+                        classes.push('repeated');
+                    }
+
+                    if (/[.,!?]{2,}/.test(word)) {
+                        classes.push('odd-punctuation');
+                    }
+
+                    if (index > 0 && 
+                        !word.startsWith('.') && 
+                        /^[a-z]/.test(word) && 
+                        /^[A-Z]/.test(words[index - 1])) {
+                        classes.push('possible-name');
+                    }
+
+                    return `<span class="${classes.join(' ')}" 
+                                 contenteditable="true">${word}</span>`;
+                }).join(' ');
+
+                // Add click handlers for highlighting
+                element.querySelectorAll('.word').forEach(word => {
+                    word.addEventListener('click', function() {
+                        // Remove active class from all words
+                        element.querySelectorAll('.word').forEach(w => w.classList.remove('active'));
+                        // Add active class to clicked word
+                        this.classList.add('active');
+                    });
+                });
+
+                // Add keydown handler to the entire element
+                element.addEventListener('keydown', function(e) {
+                    const activeWord = element.querySelector('.word.active');
+                    if (!activeWord) return;
+
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        
+                        const words = Array.from(element.querySelectorAll('.word'));
+                        const currentIndex = words.indexOf(activeWord);
+                        
+                        const nextWord = e.key === 'ArrowRight' ? 
+                            words[currentIndex + 1] : 
+                            words[currentIndex - 1];
+
+                        if (nextWord) {
+                            // Remove active class from all words
+                            words.forEach(w => w.classList.remove('active'));
+                            // Add active class to next word
+                            nextWord.classList.add('active');
+                            
+                            // Ensure the word is visible
+                            nextWord.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            
+                            // Focus and select the word
+                            nextWord.focus();
+                            const range = document.createRange();
+                            const sel = window.getSelection();
+                            range.selectNodeContents(nextWord);
+                            sel.removeAllRanges();
+                            sel.addRange(range);
+                        }
                     }
                 });
+            }
+
+            const transcriptElements = document.querySelectorAll('[data-type="transcript"]');
+            transcriptElements.forEach(element => {
+                processTranscript(element);
             });
+
+            // Add instructions element
+            const instructions = document.createElement('div');
+            instructions.className = 'edit-instructions';
+
+            instructions.innerHTML = `
+                <strong>Quick Editing Tips:</strong>
+                <ul>
+                    <li>Click any word to edit it directly</li>
+                    <li>Use ← → arrow keys to move between words</li>
+                    <li>Underlined words may need attention:
+                        <ul>
+                            <li><span style="border-bottom: 1px dotted red">Red</span>: Check punctuation</li>
+                            <li><span style="border-bottom: 1px dotted blue">Blue</span>: Possible name</li>
+                            <li><span style="text-decoration: wavy underline #ff9800">Orange</span>: Repeated word</li>
+                        </ul>
+                    </li>
+                    <li>For larger fixes, use the chat below</li>
+                </ul>
+            `;
+            document.body.appendChild(instructions);
         });
     </script>
 </body>
 </html>
+
+
+
+
+
 
