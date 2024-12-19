@@ -212,6 +212,40 @@ def view_blog():
         logging.error(f"Error rendering blog template: {str(e)}")
         return f"Error rendering blog template: {str(e)}", 500
 
+@app.route('/chat/<int:post_id>', methods=['POST'])
+def chat_with_ai(post_id):
+    try:
+        if not hasattr(app, 'blog_posts') or post_id >= len(app.blog_posts):
+            return jsonify({'error': 'Blog post not found'}), 404
+
+        data = request.json
+        message = data.get('message')
+        blog_content = data.get('blogContent')
+
+        if not message:
+            return jsonify({'error': 'No message provided'}), 400
+
+        # Create chat completion with OpenAI
+        response = client.chat.completions.create(
+            model="gpt-4o",  # or "gpt-3.5-turbo" depending on your needs
+            messages=[
+                {"role": "system", "content": "You are a helpful writing assistant. Your task is to help improve blog posts while maintaining their original meaning and style."},
+                {"role": "user", "content": f"Here's the current blog content:\n\n{blog_content}\n\nUser request: {message}"}
+            ]
+        )
+
+        # Get the AI's response
+        ai_response = response.choices[0].message.content
+
+        # Update the blog post content
+        app.blog_posts[post_id]['content'] = ai_response
+
+        return jsonify({'response': ai_response})
+
+    except Exception as e:
+        logging.error(f"Error in chat endpoint: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     setup_upload_folder()  # Ensure the uploads directory exists
     app.run(debug=True)

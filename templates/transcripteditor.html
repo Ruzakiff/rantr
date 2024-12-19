@@ -219,7 +219,7 @@
                 const blogContent = activePost.querySelector('.blog-content');
                 const contentId = new URLSearchParams(window.location.search).get('id');
 
-                fetch(`/chat/0?id=${contentId}`, {
+                fetch(`/chat/${contentId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -231,6 +231,9 @@
                 })
                 .then(response => response.json())
                 .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
                     blogContent.innerHTML = data.response;
                     if (!customMessage) {
                         chatInput.value = '';
@@ -240,7 +243,7 @@
                 })
                 .catch((error) => {
                     console.error('Error:', error);
-                    alert('Error processing message');
+                    alert('Error processing message: ' + error.message);
                     hideLoading();
                 });
             }
