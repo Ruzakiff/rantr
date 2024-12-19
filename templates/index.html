@@ -117,11 +117,12 @@
     <h1>Rantr</h1>
     <div id="drop-area">
         <form class="my-form">
-            <p>Upload your audio file using the button below or by dragging and dropping</p>
-            <input type="file" id="fileElem" accept="audio/*" onchange="handleFiles(this.files)">
-            <label class="button" for="fileElem">Select audio file</label>
+            <p>Upload one or more audio files using the button below or by dragging and dropping</p>
+            <input type="file" id="fileElem" accept="audio/*" multiple onchange="handleFiles(this.files)">
+            <label class="button" for="fileElem">Select audio file(s)</label>
         </form>
         <p class="info-text">Supported formats: MP3, WAV, OGG, M4A</p>
+        <div id="file-list"></div>
     </div>
     
     <div id="progress-container">
@@ -267,9 +268,122 @@
             }
         }
 
-        function handleFiles(files) {
-            if (files.length > 0) {
+        async function handleFiles(files) {
+            if (files.length === 0) return;
+
+            // Show selected files
+            const fileList = document.getElementById('file-list');
+            fileList.innerHTML = '<h3>Selected Files:</h3>';
+            const fileListUl = document.createElement('ul');
+            fileList.appendChild(fileListUl);
+
+            for (let file of files) {
+                const li = document.createElement('li');
+                li.textContent = file.name;
+                fileListUl.appendChild(li);
+            }
+
+            // If only one file, upload directly
+            if (files.length === 1) {
                 uploadFile(files[0]);
+                return;
+            }
+
+            // For multiple files, merge them first
+            try {
+                progressContainer.style.display = 'block';
+                progressText.textContent = 'Merging audio files...';
+                
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const audioBuffers = await Promise.all(
+                    Array.from(files).map(file => 
+                        file.arrayBuffer()
+                            .then(buffer => audioContext.decodeAudioData(buffer))
+                    )
+                );
+
+                // Calculate total length
+                const totalLength = audioBuffers.reduce((acc, buffer) => acc + buffer.length, 0);
+                const sampleRate = audioBuffers[0].sampleRate;
+                const numberOfChannels = audioBuffers[0].numberOfChannels;
+
+                // Create merged buffer
+                const mergedBuffer = audioContext.createBuffer(
+                    numberOfChannels,
+                    totalLength,
+                    sampleRate
+                );
+
+                // Merge buffers
+                let offset = 0;
+                for (let buffer of audioBuffers) {
+                    for (let channel = 0; channel < numberOfChannels; channel++) {
+                        const channelData = mergedBuffer.getChannelData(channel);
+                        channelData.set(buffer.getChannelData(channel), offset);
+                    }
+                    offset += buffer.length;
+                }
+
+                // Convert merged buffer to blob
+                const mergedAudio = await audioBufferToBlob(mergedBuffer);
+                
+                // Create a File object from the blob
+                const mergedFile = new File([mergedAudio], "merged_audio.wav", {
+                    type: "audio/wav"
+                });
+
+                // Upload merged file
+                uploadFile(mergedFile);
+
+            } catch (error) {
+                console.error('Error merging files:', error);
+                progressText.innerHTML = `<span class="error-text">Error merging files: ${error.message}</span>`;
+            }
+        }
+
+        async function audioBufferToBlob(audioBuffer) {
+            const wav = audioBufferToWav(audioBuffer);
+            return new Blob([wav], { type: 'audio/wav' });
+        }
+
+        // Function to convert AudioBuffer to WAV format
+        function audioBufferToWav(buffer) {
+            const numberOfChannels = buffer.numberOfChannels;
+            const sampleRate = buffer.sampleRate;
+            const length = buffer.length * numberOfChannels * 2;
+            const arrayBuffer = new ArrayBuffer(44 + length);
+            const view = new DataView(arrayBuffer);
+
+            // Write WAV header
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + length, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, numberOfChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+            view.setUint16(32, numberOfChannels * 2, true);
+            view.setUint16(34, 16, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, length, true);
+
+            // Write audio data
+            const offset = 44;
+            for (let i = 0; i < buffer.length; i++) {
+                for (let channel = 0; channel < numberOfChannels; channel++) {
+                    const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+                    view.setInt16(offset + (i * numberOfChannels + channel) * 2, sample * 0x7FFF, true);
+                }
+            }
+
+            return arrayBuffer;
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
             }
         }
     </script>
