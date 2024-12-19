@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generated Blog Posts</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .page-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .page-title {
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        .page-subtitle {
+            color: #666;
+            margin-top: 0;
+        }
+        .blog-post {
+            position: relative;
+            background-color: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            min-height: 200px;
+        }
+        .transcript-status {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            color: #666;
+        }
+        .blog-content {
+            padding: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 1rem 0;
+            min-height: 200px;
+        }
+        .blog-content:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+        }
+        .chat-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 1rem;
+        }
+        .chat-input {
+            width: 100%;
+            min-height: 60px;
+            padding: 8px;
+            margin-bottom: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        .chat-submit {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            float: right;
+        }
+        .loading-indicator {
+            color: #4CAF50;
+            font-weight: bold;
+            margin-top: 10px;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .word {
+            position: relative;
+            padding: 0 2px;
+            border-radius: 3px;
+        }
+        .word:hover {
+            background-color: #f0f0f0;
+            cursor: text;
+        }
+        .word.active {
+            background-color: #e3f2fd;
+            outline: 2px solid #2196f3;
+        }
+    </style>
+</head>
+<body>
+    <header class="page-header">
+        <h1 class="page-title">Generated Blog Posts</h1>
+        <p class="page-subtitle">Review and refine your AI-generated content</p>
+    </header>
+
+    {% for post in blog_posts %}
+    <div class="blog-post">
+        <div class="transcript-status">
+            <span>📝 Blog Post</span>
+        </div>
+        
+        <h2>{{ post.title }}</h2>
+        <p><strong>Keyword:</strong> {{ post.keyword }}</p>
+        
+        <div id="blog-content-{{ loop.index0 }}" 
+             class="blog-content"
+             contenteditable="true"
+             data-title="{{ post.title }}">
+            {{ post.content | safe }}
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="chat-container">
+        <textarea 
+            class="chat-input" 
+            placeholder="Ask AI to help improve the blog post..."
+        ></textarea>
+        <button class="chat-submit">Send</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            function processTranscript(element) {
+                const text = element.textContent;
+                const words = text.split(/\s+/);
+                
+                element.innerHTML = words.map((word) => {
+                    return `<span class="word" contenteditable="true">${word}</span>`;
+                }).join(' ');
+
+                element.querySelectorAll('.word').forEach(word => {
+                    word.addEventListener('click', function() {
+                        element.querySelectorAll('.word').forEach(w => w.classList.remove('active'));
+                        this.classList.add('active');
+                    });
+                });
+
+                element.addEventListener('keydown', function(e) {
+                    const activeWord = element.querySelector('.word.active');
+                    if (!activeWord) return;
+
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        
+                        const words = Array.from(element.querySelectorAll('.word'));
+                        const currentIndex = words.indexOf(activeWord);
+                        
+                        const nextWord = e.key === 'ArrowRight' ? 
+                            words[currentIndex + 1] : 
+                            words[currentIndex - 1];
+
+                        if (nextWord) {
+                            words.forEach(w => w.classList.remove('active'));
+                            nextWord.classList.add('active');
+                            nextWord.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            nextWord.focus();
+                            
+                            const range = document.createRange();
+                            const sel = window.getSelection();
+                            range.selectNodeContents(nextWord);
+                            sel.removeAllRanges();
+                            sel.addRange(range);
+                        }
+                    }
+                });
+            }
+
+            document.querySelectorAll('.blog-content').forEach(element => {
+                processTranscript(element);
+            });
+
+            const chatInput = document.querySelector('.chat-input');
+            const chatSubmit = document.querySelector('.chat-submit');
+
+            function showLoading() {
+                const activePost = document.querySelector('.blog-post');
+                if (!activePost.querySelector('.loading-indicator')) {
+                    const loadingIndicator = document.createElement('div');
+                    loadingIndicator.className = 'loading-indicator';
+                    loadingIndicator.textContent = 'Loading...';
+                    loadingIndicator.style.display = 'block';
+                    activePost.appendChild(loadingIndicator);
+                }
+            }
+
+            function hideLoading() {
+                const loadingIndicator = document.querySelector('.loading-indicator');
+                if (loadingIndicator) {
+                    loadingIndicator.remove();
+                }
+            }
+
+            function sendMessage(customMessage = null) {
+                const message = customMessage || chatInput.value.trim();
+                if (!message) return;
+
+                showLoading();
+
+                const activePost = document.querySelector('.blog-post');
+                const blogContent = activePost.querySelector('.blog-content');
+                const contentId = new URLSearchParams(window.location.search).get('id');
+
+                fetch(`/chat/0?id=${contentId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        message: message,
+                        blogContent: blogContent.innerHTML,
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    blogContent.innerHTML = data.response;
+                    if (!customMessage) {
+                        chatInput.value = '';
+                    }
+                    hideLoading();
+                    processTranscript(blogContent);
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                    alert('Error processing message');
+                    hideLoading();
+                });
+            }
+
+            chatSubmit.addEventListener('click', () => sendMessage());
+            
+            chatInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+
+            chatInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            });
+        });
+    </script>
+</body>
+</html>

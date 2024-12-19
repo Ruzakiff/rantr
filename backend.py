@@ -206,7 +206,7 @@ def view_blog():
         return "Blog post not found", 404
     
     try:
-        return render_template('blog.html', 
+        return render_template('transcripteditor.html', 
                              blog_posts=[app.blog_posts[post_id]])
     except Exception as e:
         logging.error(f"Error rendering blog template: {str(e)}")
