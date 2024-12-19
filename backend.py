@@ -227,9 +227,9 @@ def chat_with_ai(post_id):
 
         # Create chat completion with OpenAI
         response = client.chat.completions.create(
-            model="gpt-4o",  # or "gpt-3.5-turbo" depending on your needs
+            model="gpt-4o-mini-2024-07-18",  # or "gpt-3.5-turbo" depending on your needs
             messages=[
-                {"role": "system", "content": "You are a helpful writing assistant. Your task is to help improve blog posts while maintaining their original meaning and style."},
+                {"role": "system", "content": "You are a helpful transcript editor. Your task is to help users fix any inaccuracies in transcripts while preserving the original meaning and style. Focus on correcting errors in transcription, grammar, and punctuation while maintaining the speaker's voice and intent."},
                 {"role": "user", "content": f"Here's the current blog content:\n\n{blog_content}\n\nUser request: {message}"}
             ]
         )
