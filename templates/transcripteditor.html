@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generated Blog Posts</title>
+    <title>Review Transcribed Audio</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -103,22 +103,39 @@
             background-color: #e3f2fd;
             outline: 2px solid #2196f3;
         }
+        .next-button {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .next-button:hover {
+            background: #45a049;
+        }
     </style>
 </head>
 <body>
     <header class="page-header">
-        <h1 class="page-title">Generated Blog Posts</h1>
-        <p class="page-subtitle">Review and refine your AI-generated content</p>
+        <h1 class="page-title">Review Transcribed Audio</h1>
+        <p class="page-subtitle">Review transcript for accuracy and refine as needed</p>
     </header>
 
     {% for post in blog_posts %}
     <div class="blog-post">
         <div class="transcript-status">
-            <span>📝 Blog Post</span>
+            <span>📝 Transcript</span>
         </div>
         
         <h2>{{ post.title }}</h2>
-        <p><strong>Keyword:</strong> {{ post.keyword }}</p>
+        <p><strong>File:</strong> {{ post.keyword }}</p>
         
         <div id="blog-content-{{ loop.index0 }}" 
              class="blog-content"
@@ -136,6 +153,8 @@
         ></textarea>
         <button class="chat-submit">Send</button>
     </div>
+
+    <button class="next-button">Next Step →</button>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -260,6 +279,32 @@
             chatInput.addEventListener('input', function() {
                 this.style.height = 'auto';
                 this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            });
+
+            document.querySelector('.next-button').addEventListener('click', function() {
+                const contentId = new URLSearchParams(window.location.search).get('id');
+                const blogContent = document.querySelector('.blog-content');
+                
+                fetch(`/save-and-next/${contentId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        content: blogContent.innerHTML
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    window.location.href = data.nextUrl;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error saving content: ' + error.message);
+                });
             });
         });
     </script>
