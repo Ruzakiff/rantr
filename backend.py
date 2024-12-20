@@ -7,7 +7,7 @@ import tempfile
 from threading import Lock
 import ffmpeg
 from audio_processor import AudioProcessor
-
+import prompts
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -245,6 +245,84 @@ def chat_with_ai(post_id):
     except Exception as e:
         logging.error(f"Error in chat endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/save-and-next/<int:post_id>', methods=['POST'])
+def save_and_next(post_id):
+    try:
+        if not hasattr(app, 'blog_posts') or post_id >= len(app.blog_posts):
+            return jsonify({'error': 'Blog post not found'}), 404
+
+        data = request.json
+        content = data.get('content')
+        
+        if not content:
+            return jsonify({'error': 'No content provided'}), 400
+
+        # Save the updated content
+        app.blog_posts[post_id]['content'] = content
+
+        # Generate topic cards from the transcript
+        topics = generate_topic_cards(content)
+        
+        # Store topic cards in session or app context
+        if not hasattr(app, 'topic_cards'):
+            app.topic_cards = {}
+        app.topic_cards[post_id] = topics
+
+        # Return the URL for the topic cards page
+        return jsonify({
+            'success': True,
+            'nextUrl': url_for('view_topic_cards', post_id=post_id)
+        })
+
+    except Exception as e:
+        logging.error(f"Error in save_and_next: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/topic-cards/<int:post_id>')
+def view_topic_cards(post_id):
+    if not hasattr(app, 'topic_cards') or post_id not in app.topic_cards:
+        return "Topic cards not found", 404
+    
+    try:
+        return render_template('topiccards.html', 
+                             cards=app.topic_cards[post_id])
+    except Exception as e:
+        logging.error(f"Error rendering topic cards template: {str(e)}")
+        return f"Error rendering topic cards template: {str(e)}", 500
+
+def generate_topic_cards(transcript):
+    """Generate topic cards from the transcript using AI"""
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": prompts.topiccards},
+                {"role": "user", "content": f"6 grain {transcript}"}
+            ]
+        )
+
+        # Process the AI response into structured cards
+        ai_response = response.choices[0].message.content
+        
+        # Split the response into cards (assuming AI formats with clear separators)
+        # This is a simple implementation - you might need to adjust based on your AI's output format
+        raw_cards = ai_response.split('\n\n')
+        
+        cards = []
+        for raw_card in raw_cards:
+            if ':' in raw_card:
+                title, content = raw_card.split(':', 1)
+                cards.append({
+                    'title': title.strip(),
+                    'content': content.strip()
+                })
+
+        return cards
+
+    except Exception as e:
+        logging.error(f"Error generating topic cards: {str(e)}")
+        raise
 
 if __name__ == '__main__':
     setup_upload_folder()  # Ensure the uploads directory exists
