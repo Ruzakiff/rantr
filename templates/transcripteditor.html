@@ -32,6 +32,7 @@
             border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             min-height: 200px;
+            z-index: 1;
         }
         .transcript-status {
             position: absolute;
@@ -103,34 +104,12 @@
             background-color: #e3f2fd;
             outline: 2px solid #2196f3;
         }
-        .next-button {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        .next-button:hover {
-            background: #45a049;
+        .controls-section {
+            margin: 40px 0;
+            text-align: center;
         }
         .granularity-control {
-            position: fixed;
-            bottom: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: white;
-            padding: 15px 25px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            text-align: center;
-            z-index: 1000;
+            margin-bottom: 20px;
         }
         .granularity-slider {
             width: 200px;
@@ -143,7 +122,6 @@
         }
         .granularity-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            appearance: none;
             width: 20px;
             height: 20px;
             background: #4CAF50;
@@ -167,6 +145,44 @@
         .granularity-label {
             color: #666;
             font-size: 0.9em;
+        }
+        .next-button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        }
+        .next-button:hover {
+            background: #45a049;
+        }
+        .next-button.loading {
+            background: #45a049;
+            opacity: 0.8;
+            pointer-events: none;
+            position: relative;
+            padding-right: 40px;
+        }
+        .next-button.loading::after {
+            content: '';
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 20px;
+            border: 3px solid #ffffff;
+            border-top: 3px solid transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: translateY(-50%) rotate(0deg); }
+            100% { transform: translateY(-50%) rotate(360deg); }
         }
     </style>
 </head>
@@ -194,12 +210,15 @@
     </div>
     {% endfor %}
 
-    <div class="granularity-control">
-        <div class="granularity-label">Number of Topic Cards</div>
-        <input type="range" class="granularity-slider" min="2" max="8" value="3" step="1">
-        <div>
-            <span class="granularity-value">3</span> topics
+    <div class="controls-section">
+        <div class="granularity-control">
+            <div class="granularity-label">Number of Topic Cards</div>
+            <input type="range" class="granularity-slider" min="2" max="8" value="3" step="1">
+            <div>
+                <span class="granularity-value">3</span> topics
+            </div>
         </div>
+        <button class="next-button">Next Step →</button>
     </div>
 
     <div class="chat-container">
@@ -209,8 +228,6 @@
         ></textarea>
         <button class="chat-submit">Send</button>
     </div>
-
-    <button class="next-button">Next Step →</button>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -343,7 +360,14 @@
                 this.style.height = Math.min(this.scrollHeight, 120) + 'px';
             });
 
-            document.querySelector('.next-button').addEventListener('click', function() {
+            const nextButton = document.querySelector('.next-button');
+            
+            nextButton.addEventListener('click', function() {
+                const button = this;
+                const originalText = button.textContent;
+                button.classList.add('loading');
+                button.textContent = 'Processing...';
+                
                 const contentId = new URLSearchParams(window.location.search).get('id');
                 const blogContent = document.querySelector('.blog-content');
                 const granularity = parseInt(granularitySlider.value);
@@ -363,11 +387,17 @@
                     if (data.error) {
                         throw new Error(data.error);
                     }
+                    // Reset button before navigation
+                    button.classList.remove('loading');
+                    button.textContent = originalText;
                     window.location.href = data.nextUrl;
                 })
                 .catch(error => {
                     console.error('Error:', error);
                     alert('Error saving content: ' + error.message);
+                    // Reset button on error
+                    button.classList.remove('loading');
+                    button.textContent = originalText;
                 });
             });
         });
