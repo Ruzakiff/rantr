@@ -16,6 +16,18 @@ Consider a "first principles" approach to uncover the main purposes and effects 
 
 # Output Format
 
+- Each card must start with "Topic N: " where N is the topic number
+- Each card must be separated by TWO newlines
+- Each topic must have a clear title and detailed content
+        
+        Example format:
+        Topic 1: [Title]
+        [Content for topic 1]
+
+        Topic 2: [Title]
+        [Content for topic 2]
+
+
 Provide a list of suggested blog topics according to the user's preferred granularity (e.g., 1-10 topics). Each topic should:
 - Be a concise, engaging title (3-10 words).
 - Include a short sentence explaining why this topic would be valuable for publication based on its underlying motivation or purpose.
@@ -36,4 +48,6 @@ Provide a list of suggested blog topics according to the user's preferred granul
    *Documenting struggles and solutions is a way to share real tips that save time for others.*
 
 (Note: Adjust the number of blog topics according to the granularity specified by the user.)
+
+ONLY OUTPUT THE TOPICS, BEGIN:
 """

@@ -120,6 +120,54 @@
         .next-button:hover {
             background: #45a049;
         }
+        .granularity-control {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+            z-index: 1000;
+        }
+        .granularity-slider {
+            width: 200px;
+            margin: 10px 0;
+            -webkit-appearance: none;
+            height: 8px;
+            background: #ddd;
+            border-radius: 4px;
+            outline: none;
+        }
+        .granularity-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #4CAF50;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .granularity-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #4CAF50;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+        .granularity-value {
+            font-weight: bold;
+            color: #4CAF50;
+            font-size: 1.2em;
+            margin: 0 5px;
+        }
+        .granularity-label {
+            color: #666;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
@@ -145,6 +193,14 @@
         </div>
     </div>
     {% endfor %}
+
+    <div class="granularity-control">
+        <div class="granularity-label">Number of Topic Cards</div>
+        <input type="range" class="granularity-slider" min="2" max="8" value="3" step="1">
+        <div>
+            <span class="granularity-value">3</span> topics
+        </div>
+    </div>
 
     <div class="chat-container">
         <textarea 
@@ -209,6 +265,12 @@
 
             const chatInput = document.querySelector('.chat-input');
             const chatSubmit = document.querySelector('.chat-submit');
+            const granularitySlider = document.querySelector('.granularity-slider');
+            const granularityValue = document.querySelector('.granularity-value');
+
+            granularitySlider.addEventListener('input', function() {
+                granularityValue.textContent = this.value;
+            });
 
             function showLoading() {
                 const activePost = document.querySelector('.blog-post');
@@ -284,6 +346,7 @@
             document.querySelector('.next-button').addEventListener('click', function() {
                 const contentId = new URLSearchParams(window.location.search).get('id');
                 const blogContent = document.querySelector('.blog-content');
+                const granularity = parseInt(granularitySlider.value);
                 
                 fetch(`/save-and-next/${contentId}`, {
                     method: 'POST',
@@ -291,7 +354,8 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        content: blogContent.innerHTML
+                        content: blogContent.innerHTML,
+                        granularity: granularity
                     })
                 })
                 .then(response => response.json())

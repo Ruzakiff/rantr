@@ -254,6 +254,7 @@ def save_and_next(post_id):
 
         data = request.json
         content = data.get('content')
+        granularity = data.get('granularity', 3)  # Default to 3 if not specified
         
         if not content:
             return jsonify({'error': 'No content provided'}), 400
@@ -261,8 +262,8 @@ def save_and_next(post_id):
         # Save the updated content
         app.blog_posts[post_id]['content'] = content
 
-        # Generate topic cards from the transcript
-        topics = generate_topic_cards(content)
+        # Generate topic cards from the transcript with specified granularity
+        topics = generate_topic_cards(content, granularity)
         
         # Store topic cards in session or app context
         if not hasattr(app, 'topic_cards'):
@@ -291,32 +292,51 @@ def view_topic_cards(post_id):
         logging.error(f"Error rendering topic cards template: {str(e)}")
         return f"Error rendering topic cards template: {str(e)}", 500
 
-def generate_topic_cards(transcript):
+def generate_topic_cards(transcript, granularity=3):
     """Generate topic cards from the transcript using AI"""
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": prompts.topiccards},
-                {"role": "user", "content": f"6 grain {transcript}"}
-            ]
+                {"role": "user", "content": f"{granularity} grain {transcript}"}
+            ],
+            temperature=0
         )
 
         # Process the AI response into structured cards
         ai_response = response.choices[0].message.content
         
-        # Split the response into cards (assuming AI formats with clear separators)
-        # This is a simple implementation - you might need to adjust based on your AI's output format
-        raw_cards = ai_response.split('\n\n')
+        # Split by "Topic N:" pattern
+        import re
+        topics = re.split(r'Topic \d+:', ai_response)[1:]  # Skip the first empty split
         
         cards = []
-        for raw_card in raw_cards:
-            if ':' in raw_card:
-                title, content = raw_card.split(':', 1)
+        for i, topic in enumerate(topics, 1):
+            if ':' in topic:
+                title, content = topic.split(':', 1)
+            else:
+                # If no colon in the topic, treat first line as title
+                lines = topic.strip().split('\n', 1)
+                title = lines[0]
+                content = lines[1] if len(lines) > 1 else ""
+            
+            cards.append({
+                'title': f"Topic {i}: {title.strip()}",
+                'content': content.strip()
+            })
+
+        # Ensure we have exactly the requested number of cards
+        if len(cards) != granularity:
+            logging.warning(f"Generated {len(cards)} cards instead of requested {granularity}")
+            # If we got fewer cards than requested, add placeholder cards
+            while len(cards) < granularity:
                 cards.append({
-                    'title': title.strip(),
-                    'content': content.strip()
+                    'title': f"Topic {len(cards) + 1}",
+                    'content': "Content needs to be generated for this topic."
                 })
+            # If we got more cards than requested, truncate
+            cards = cards[:granularity]
 
         return cards
 
