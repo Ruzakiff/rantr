@@ -72,14 +72,72 @@
             50% { opacity: 0.5; }
             100% { opacity: 1; }
         }
+        .card-actions {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .card-action-btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .merge-btn {
+            background: #2196F3;
+            color: white;
+        }
+
+        .split-btn {
+            background: #FF9800;
+            color: white;
+        }
+
+        .exclude-btn {
+            background: #f44336;
+            color: white;
+        }
+
+        .card-action-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .card-action-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
     </style>
 </head>
 <body>
+    <script>
+        const postId = {{ post_id }};
+    </script>
+
     {% for card in cards %}
-    <div class="card">
+    <div class="card" data-card-index="{{ loop.index0 }}">
         <h2>{{ card.title }}</h2>
         <div class="card-content" contenteditable="true">
             {{ card.content | safe }}
+        </div>
+        <div class="card-actions">
+            <button class="card-action-btn merge-btn" onclick="handleMerge({{ loop.index0 }})">
+                Merge Topics
+            </button>
+            <button class="card-action-btn split-btn" onclick="console.log('Split clicked'); handleSplit({{ loop.index0 }});">
+                Split Topic
+            </button>
+            <button class="card-action-btn exclude-btn" onclick="handleExclude({{ loop.index0 }})">
+                Exclude
+            </button>
         </div>
     </div>
     {% endfor %}
@@ -94,6 +152,9 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, setting up handlers');
+            console.log('Post ID:', postId);
+
             const chatInput = document.querySelector('.chat-input');
             const chatSubmit = document.querySelector('.chat-submit');
 
@@ -166,6 +227,117 @@
                 this.style.height = 'auto';
                 this.style.height = Math.min(this.scrollHeight, 120) + 'px';
             });
+
+            function handleMerge(cardIndex) {
+                const cards = document.querySelectorAll('.card');
+                const currentCard = cards[cardIndex];
+                
+                // If it's the last card, can't merge
+                if (cardIndex === cards.length - 1) {
+                    alert("Can't merge the last card");
+                    return;
+                }
+
+                const nextCard = cards[cardIndex + 1];
+                const mergedContent = currentCard.querySelector('.card-content').innerHTML + 
+                                    "\n\n" + 
+                                    nextCard.querySelector('.card-content').innerHTML;
+
+                // Send to backend to process the merge
+                fetch(`/merge-topics/${postId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        cardIndex: cardIndex,
+                        mergedContent: mergedContent
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) throw new Error(data.error);
+                    location.reload(); // Refresh to show updated cards
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error merging topics: ' + error.message);
+                });
+            }
+
+            function handleSplit(cardIndex) {
+                console.log('Split button clicked for card:', cardIndex);
+                const cards = document.querySelectorAll('.card');
+                const currentCard = cards[cardIndex];
+                const splitButton = currentCard.querySelector('.split-btn');
+                const content = currentCard.querySelector('.card-content').innerHTML;
+
+                console.log('Content to split:', content.substring(0, 100) + '...');
+
+                // Disable button and show loading state
+                splitButton.disabled = true;
+                const originalText = splitButton.textContent;
+                splitButton.textContent = 'Splitting...';
+
+                fetch(`/split-topic/${postId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        cardIndex: cardIndex,
+                        content: content
+                    })
+                })
+                .then(response => {
+                    console.log('Response received:', response.status);
+                    return response.json().then(data => {
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Server error');
+                        }
+                        return data;
+                    });
+                })
+                .then(data => {
+                    console.log('Success:', data);
+                    location.reload();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error splitting topic: ' + error.message);
+                    splitButton.disabled = false;
+                    splitButton.textContent = originalText;
+                });
+            }
+
+            function handleExclude(cardIndex) {
+                if (!confirm('Are you sure you want to exclude this topic?')) return;
+
+                fetch(`/exclude-topic/${postId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        cardIndex: cardIndex
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) throw new Error(data.error);
+                    location.reload(); // Refresh to show updated cards
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error excluding topic: ' + error.message);
+                });
+            }
+
+            // Add to window object to make functions available to onclick handlers
+            window.handleMerge = handleMerge;
+            window.handleSplit = handleSplit;
+            window.handleExclude = handleExclude;
+            console.log('Split handler attached to window object');
         });
     </script>
 </body>

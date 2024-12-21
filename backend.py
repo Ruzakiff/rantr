@@ -287,7 +287,8 @@ def view_topic_cards(post_id):
     
     try:
         return render_template('topiccards.html', 
-                             cards=app.topic_cards[post_id])
+                             cards=app.topic_cards[post_id],
+                             post_id=post_id)
     except Exception as e:
         logging.error(f"Error rendering topic cards template: {str(e)}")
         return f"Error rendering topic cards template: {str(e)}", 500
@@ -343,6 +344,149 @@ def generate_topic_cards(transcript, granularity=3):
     except Exception as e:
         logging.error(f"Error generating topic cards: {str(e)}")
         raise
+
+@app.route('/merge-topics/<int:post_id>', methods=['POST'])
+def merge_topics(post_id):
+    try:
+        data = request.json
+        card_index = data.get('cardIndex')
+        merged_content = data.get('mergedContent')
+
+        # Get current cards
+        cards = app.topic_cards[post_id]
+        
+        # Create new merged card
+        merged_card = {
+            'title': f"Topic {card_index + 1}: Merged Topics",
+            'content': merged_content
+        }
+
+        # Remove the two cards being merged and insert the merged card
+        cards.pop(card_index + 1)
+        cards[card_index] = merged_card
+
+        # Renumber remaining cards
+        for i, card in enumerate(cards, 1):
+            card['title'] = f"Topic {i}: {card['title'].split(':', 1)[1].strip()}"
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/split-topic/<int:post_id>', methods=['POST'])
+def split_topic(post_id):
+    try:
+        data = request.json
+        card_index = data.get('cardIndex')
+        content = data.get('content')
+        
+        logging.debug(f"Splitting topic {card_index} with content length: {len(content)}")
+
+        # Get current cards
+        if not hasattr(app, 'topic_cards') or post_id not in app.topic_cards:
+            logging.error(f"Topic cards not found for post_id: {post_id}")
+            return jsonify({'error': 'Topic cards not found'}), 404
+            
+        cards = app.topic_cards[post_id]
+        logging.debug(f"Current number of cards: {len(cards)}")
+
+        # Use same format as generate_topic_cards
+        system_prompt = """You are an expert at analyzing content and breaking it down into distinct topics. 
+        Split this content into EXACTLY two distinct topics.
+        
+        Format requirements:
+        1. Create EXACTLY 2 cards
+        2. Each card must start with "Topic N: " where N is the topic number
+        3. Each card must be separated by TWO newlines
+        4. Each topic must have a clear title and detailed content
+        
+        Example format:
+        Topic 1: [Clear Title]
+        [Detailed content for first topic]
+
+        Topic 2: [Clear Title]
+        [Detailed content for second topic]"""
+
+        logging.debug("Calling OpenAI API for split")
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Split this content into two clear topics:\n\n{content}"}
+            ],
+            temperature=0
+        )
+
+        split_content = response.choices[0].message.content
+        logging.debug(f"AI Response received. Length: {len(split_content)}")
+        logging.debug(f"AI Response content: {split_content}")
+
+        # Parse the split topics using the same logic as generate_topic_cards
+        import re
+        topics = re.split(r'Topic \d+:', split_content)[1:]  # Skip the first empty split
+        logging.debug(f"Number of topics split: {len(topics)}")
+
+        if len(topics) != 2:
+            logging.error(f"AI generated {len(topics)} topics instead of 2")
+            return jsonify({'error': 'AI did not generate exactly two topics'}), 500
+
+        # Remove the original card
+        cards.pop(card_index)
+        
+        # Insert the two new cards
+        for i, topic in enumerate(topics):
+            if ':' in topic:
+                title, content = topic.split(':', 1)
+            else:
+                lines = topic.strip().split('\n', 1)
+                title = lines[0]
+                content = lines[1] if len(lines) > 1 else ""
+            
+            new_card = {
+                'title': f"Topic {card_index + i + 1}: {title.strip()}",
+                'content': content.strip()
+            }
+            logging.debug(f"Adding new card: {new_card['title']}")
+            cards.insert(card_index + i, new_card)
+
+        # Renumber all cards
+        for i, card in enumerate(cards, 1):
+            card['title'] = f"Topic {i}: {card['title'].split(':', 1)[1].strip() if ':' in card['title'] else card['title']}"
+        
+        logging.debug(f"Final number of cards: {len(cards)}")
+        app.topic_cards[post_id] = cards  # Ensure we save the updated cards
+
+        return jsonify({
+            'success': True,
+            'message': 'Topic successfully split'
+        })
+
+    except Exception as e:
+        logging.error(f"Error in split_topic: {str(e)}")
+        logging.exception("Full traceback:")  # This will log the full stack trace
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/exclude-topic/<int:post_id>', methods=['POST'])
+def exclude_topic(post_id):
+    try:
+        data = request.json
+        card_index = data.get('cardIndex')
+
+        # Get current cards
+        cards = app.topic_cards[post_id]
+        
+        # Remove the card
+        cards.pop(card_index)
+
+        # Renumber remaining cards
+        for i, card in enumerate(cards, 1):
+            card['title'] = f"Topic {i}: {card['title'].split(':', 1)[1].strip()}"
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     setup_upload_folder()  # Ensure the uploads directory exists
